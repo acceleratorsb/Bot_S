@@ -34,14 +34,12 @@ class Form(StatesGroup):
 
 # ---- КЛАВИАТУРЫ ----
 
-# Reply-клавиатура для старта
 start_keyboard = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="🚀 Начать заполнение")]],
     resize_keyboard=True,
     one_time_keyboard=True
 )
 
-# Inline-клавиатура для инвестиций
 def get_invest_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Да, привлекли инвестиции", callback_data="invest_yes")
@@ -50,7 +48,6 @@ def get_invest_keyboard():
     builder.adjust(1)
     return builder.as_markup()
 
-# Inline-клавиатура для пилотов
 def get_pilot_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Да, запустили пилот", callback_data="pilot_yes")
@@ -58,7 +55,6 @@ def get_pilot_keyboard():
     builder.adjust(1)
     return builder.as_markup()
 
-# Inline-клавиатура для других новостей
 def get_news_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="🔹 Поделиться новостями", callback_data="news_share")
@@ -66,7 +62,6 @@ def get_news_keyboard():
     builder.adjust(1)
     return builder.as_markup()
 
-# Inline-клавиатура для меню редактирования
 def get_edit_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="💼 Инвестиции", callback_data="edit_investments")
@@ -77,7 +72,6 @@ def get_edit_keyboard():
     builder.adjust(1)
     return builder.as_markup()
 
-# Inline-клавиатура для подтверждения сводки
 def get_summary_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Всё верно, отправить", callback_data="summary_confirm")
@@ -98,21 +92,18 @@ async def cmd_start(message: types.Message, state: FSMContext):
         last_name=message.from_user.last_name
     )
     
-    # Путь к картинке (исправлено!)
     photo_path = "Картинки для бота/приветствие.png"
     
-    # Текст приветствия
     welcome_text = (
         f"Здравствуйте, {message.from_user.first_name}! 👋\n\n"
         "Это акселераторы Сбера. 🚀\n\n"
         "Хотим узнать, как обстоят дела с вашим проектом:\n"
         "есть ли достижения, как развивается стартап, что с пилотами и инвестициями.\n\n"
         "Лучшие истории попадут в итоговый дайджест сообщества.\n\n"
-        "Заполните, пожалуйста, короткую форму - это займет не более 2 минут.\n\n"
+        "Заполните, пожалуйста, короткую форму — это займёт не более 2 минут.\n\n"
         "Нажмите кнопку, чтобы начать."
     )
     
-    # Проверяем, есть ли файл с картинкой
     if os.path.exists(photo_path):
         try:
             photo = FSInputFile(photo_path)
@@ -123,16 +114,10 @@ async def cmd_start(message: types.Message, state: FSMContext):
             )
         except Exception as e:
             print(f"Ошибка отправки фото: {e}")
-            await message.answer(
-                welcome_text,
-                reply_markup=start_keyboard
-            )
+            await message.answer(welcome_text, reply_markup=start_keyboard)
     else:
         print(f"Файл не найден: {photo_path}")
-        await message.answer(
-            welcome_text,
-            reply_markup=start_keyboard
-        )
+        await message.answer(welcome_text, reply_markup=start_keyboard)
 
 @dp.message(lambda message: message.text == "🚀 Начать заполнение")
 async def handle_start_button(message: types.Message, state: FSMContext):
@@ -151,8 +136,6 @@ async def get_startup_name(message: types.Message, state: FSMContext):
         "Были ли у вас инвестиции за последний месяц?",
         reply_markup=get_invest_keyboard()
     )
-
-# ---- ОБРАБОТЧИКИ КНОПОК (Callback) ----
 
 @dp.callback_query(lambda c: c.data.startswith('invest_'))
 async def process_investment(callback: types.CallbackQuery, state: FSMContext):
@@ -205,7 +188,6 @@ async def get_investment_source(message: types.Message, state: FSMContext):
 async def get_investment_terms(message: types.Message, state: FSMContext):
     await state.update_data(investment_terms=message.text)
     
-    # Проверяем режим редактирования
     data = await state.get_data()
     if data.get('edit_mode') == 'investments':
         await state.update_data(edit_mode=None)
@@ -242,7 +224,6 @@ async def get_clients_count(message: types.Message, state: FSMContext):
         clients = int(float(message.text.replace(',', '.')))
         await state.update_data(clients_count=clients)
         
-        # Проверяем режим редактирования
         data = await state.get_data()
         if data.get('edit_mode') == 'revenue':
             await state.update_data(edit_mode=None)
@@ -274,7 +255,6 @@ async def process_pilot(callback: types.CallbackQuery, state: FSMContext):
     elif callback.data == "pilot_no":
         await state.update_data(pilot_status="❌ Нет, пилотов не было", pilot_details='')
         
-        # Проверяем режим редактирования
         data = await state.get_data()
         if data.get('edit_mode') == 'pilots':
             await state.update_data(edit_mode=None)
@@ -296,7 +276,6 @@ async def process_pilot(callback: types.CallbackQuery, state: FSMContext):
 async def get_pilot_details(message: types.Message, state: FSMContext):
     await state.update_data(pilot_details=message.text)
     
-    # Проверяем режим редактирования
     data = await state.get_data()
     if data.get('edit_mode') == 'pilots':
         await state.update_data(edit_mode=None)
@@ -322,11 +301,9 @@ async def process_news(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.answer(
             "📢 Расскажите, какие новости у вас были за последний месяц:"
         )
-        # Остаёмся в состоянии other_news, ждём текст
     elif callback.data == "news_none":
         await state.update_data(other_news="Нет новостей")
         
-        # Проверяем режим редактирования
         data = await state.get_data()
         if data.get('edit_mode') == 'news':
             await state.update_data(edit_mode=None)
@@ -336,18 +313,14 @@ async def process_news(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.message(Form.other_news)
 async def get_other_news_text(message: types.Message, state: FSMContext):
-    # Если сюда пришли, значит пользователь вводит текст новостей
     await state.update_data(other_news=message.text)
     
-    # Проверяем режим редактирования
     data = await state.get_data()
     if data.get('edit_mode') == 'news':
         await state.update_data(edit_mode=None)
         await show_summary(message, state)
     else:
         await show_summary(message, state)
-
-# ---- СВОДКА ----
 
 async def show_summary(message: types.Message, state: FSMContext):
     data = await state.get_data()
@@ -389,8 +362,6 @@ async def process_summary(callback: types.CallbackQuery, state: FSMContext):
             "Что хотите отредактировать?",
             reply_markup=get_edit_keyboard()
         )
-
-# ---- РЕДАКТИРОВАНИЕ ----
 
 @dp.callback_query(lambda c: c.data.startswith('edit_'))
 async def process_edit(callback: types.CallbackQuery, state: FSMContext):
@@ -438,8 +409,6 @@ async def process_edit(callback: types.CallbackQuery, state: FSMContext):
         await state.clear()
         await cmd_start(callback.message, state)
 
-# ---- ОТПРАВКА В ТАБЛИЦУ ----
-
 async def send_to_sheets(message: types.Message, state: FSMContext):
     data = await state.get_data()
     user_id = message.from_user.id
@@ -484,47 +453,10 @@ async def send_to_sheets(message: types.Message, state: FSMContext):
 
     await state.clear()
 
-# ---------- НОВЫЙ КОД ДЛЯ RENDER (webhook) ----------
-import os
-from fastapi import FastAPI, Request
-import uvicorn
-from aiogram import types
+# ---- ЗАПУСК БОТА (start_polling) ----
+async def main():
+    print("Бот запущен и работает через start_polling!")
+    await dp.start_polling(bot)
 
-# Создаём FastAPI приложение
-app = FastAPI()
-
-# Эндпоинт для проверки здоровья
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
-
-# Эндпоинт для Telegram webhook
-@app.post(f"/webhook/{API_TOKEN}")
-async def webhook(request: Request):
-    try:
-        update_data = await request.json()
-        update = types.Update(**update_data)
-        await dp.feed_update(bot, update)
-        return {"ok": True}
-    except Exception as e:
-        print(f"Webhook error: {e}")
-        return {"ok": False, "error": str(e)}
-
-# Функция для запуска при старте (устанавливает webhook)
-async def on_startup():
-    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/webhook/{API_TOKEN}"
-    await bot.set_webhook(webhook_url)
-    print(f"Webhook set to {webhook_url}")
-
-# Функция для завершения
-async def on_shutdown():
-    await bot.delete_webhook()
-
-# Точка входа для uvicorn
 if __name__ == "__main__":
-    import asyncio
-    # Запускаем установку вебхука перед стартом сервера
-    asyncio.run(on_startup())
-    # Запускаем FastAPI сервер
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
-# ----------------------------------------------------
+    asyncio.run(main())
