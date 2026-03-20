@@ -1,2 +1,4 @@
 aiogram==3.26.0
 requests==2.32.3
+fastapi
+uvicorn
