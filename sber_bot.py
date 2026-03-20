@@ -488,22 +488,27 @@ async def send_to_sheets(message: types.Message, state: FSMContext):
 import os
 from fastapi import FastAPI, Request
 import uvicorn
+from aiogram import types
 
-# Создаём FastAPI приложение (оно будет принимать вебхуки от Telegram)
+# Создаём FastAPI приложение
 app = FastAPI()
 
-# Эндпоинт для проверки здоровья (Render будет сюда стучаться, чтобы бот не засыпал)
+# Эндпоинт для проверки здоровья
 @app.get("/health")
 async def health():
     return {"status": "ok"}
 
 # Эндпоинт для Telegram webhook
-@app.post(f"/webhook/{API_TOKEN}") # Используем токен в URL для безопасности
+@app.post(f"/webhook/{API_TOKEN}")
 async def webhook(request: Request):
-    update = await request.json()
-    update = types.Update(**update)
-    await dp.feed_update(bot, update)
-    return {"ok": True}
+    try:
+        update_data = await request.json()
+        update = types.Update(**update_data)
+        await dp.feed_update(bot, update)
+        return {"ok": True}
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        return {"ok": False, "error": str(e)}
 
 # Функция для запуска при старте (устанавливает webhook)
 async def on_startup():
@@ -520,6 +525,6 @@ if __name__ == "__main__":
     import asyncio
     # Запускаем установку вебхука перед стартом сервера
     asyncio.run(on_startup())
-    # Запускаем FastAPI сервер на порту, который даст Render
+    # Запускаем FastAPI сервер
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
 # ----------------------------------------------------
