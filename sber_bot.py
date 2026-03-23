@@ -468,11 +468,33 @@ def run_web_server():
     app.run(host='0.0.0.0', port=8000)
 
 # ---- ЗАПУСК БОТА + ВЕБ-СЕРВЕР ----
+# ---- ЗАПУСК БОТА ----
 async def main():
+    # Принудительно удаляем вебхук при старте
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        print("Webhook удалён!")
+    except Exception as e:
+        print(f"Ошибка удаления вебхука: {e}")
+    
+    # Запускаем веб-сервер для Render
+    from flask import Flask
+    import threading
+    
+    app = Flask(__name__)
+    
+    @app.route('/')
+    def health():
+        return "Bot is running!", 200
+    
+    def run_web_server():
+        app.run(host='0.0.0.0', port=8000)
+    
     # Запускаем веб-сервер в отдельном потоке
     web_thread = threading.Thread(target=run_web_server)
     web_thread.daemon = True
     web_thread.start()
+    print("Веб-сервер запущен на порту 8000")
     
     print("Бот запущен и работает через start_polling!")
     await dp.start_polling(bot)
