@@ -462,13 +462,17 @@ app = Flask(__name__)
 
 @app.route('/')
 def health():
+    return "Bot is running!", 200
+
+@app.route('/ping')
+def ping():
+    """Короткий ответ для cron-job.org (чтобы не ругался на большой вывод)"""
     return "OK", 200
 
 def run_web_server():
     app.run(host='0.0.0.0', port=8000)
 
 # ---- ЗАПУСК БОТА + ВЕБ-СЕРВЕР ----
-# ---- ЗАПУСК БОТА ----
 async def main():
     # Принудительно удаляем вебхук при старте
     try:
@@ -476,19 +480,6 @@ async def main():
         print("Webhook удалён!")
     except Exception as e:
         print(f"Ошибка удаления вебхука: {e}")
-    
-    # Запускаем веб-сервер для Render
-    from flask import Flask
-    import threading
-    
-    app = Flask(__name__)
-    
-    @app.route('/')
-    def health():
-        return "Bot is running!", 200
-    
-    def run_web_server():
-        app.run(host='0.0.0.0', port=8000)
     
     # Запускаем веб-сервер в отдельном потоке
     web_thread = threading.Thread(target=run_web_server)
