@@ -12,6 +12,10 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime
 from aiogram.types import FSInputFile
 
+# Импорты для веб-сервера
+from flask import Flask
+import threading
+
 API_TOKEN = '8409242586:AAGeTLoHT2pbOK1n1IiaTNTb8Pvj1YT3_WU'
 
 storage = MemoryStorage()
@@ -453,8 +457,23 @@ async def send_to_sheets(message: types.Message, state: FSMContext):
 
     await state.clear()
 
-# ---- ЗАПУСК БОТА (для Render Web Service) ----
+# ---- ВЕБ-СЕРВЕР ДЛЯ RENDER ----
+app = Flask(__name__)
+
+@app.route('/')
+def health():
+    return "OK", 200
+
+def run_web_server():
+    app.run(host='0.0.0.0', port=8000)
+
+# ---- ЗАПУСК БОТА + ВЕБ-СЕРВЕР ----
 async def main():
+    # Запускаем веб-сервер в отдельном потоке
+    web_thread = threading.Thread(target=run_web_server)
+    web_thread.daemon = True
+    web_thread.start()
+    
     print("Бот запущен и работает через start_polling!")
     await dp.start_polling(bot)
 
