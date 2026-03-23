@@ -453,7 +453,7 @@ async def send_to_sheets(message: types.Message, state: FSMContext):
 
     await state.clear()
 
-# ---- ЗАПУСК БОТА (start_polling) ----
+# ---- ЗАПУСК БОТА (для Render Web Service) ----
 async def main():
     print("Бот запущен и работает через start_polling!")
     await dp.start_polling(bot)
