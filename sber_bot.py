@@ -510,6 +510,14 @@ async def send_to_sheets(message: types.Message, state: FSMContext):
     data = await state.get_data()
     user_id = message.from_user.id
 
+    # Если в state нет имени — берём из Telegram
+    if not data.get('first_name'):
+        data['first_name'] = message.from_user.first_name
+    if not data.get('last_name'):
+        data['last_name'] = message.from_user.last_name
+    if not data.get('username'):
+        data['username'] = message.from_user.username
+
     # Сохраняем пользователя в базу данных
     save_user_completion(
         user_id=user_id,
@@ -525,6 +533,7 @@ async def send_to_sheets(message: types.Message, state: FSMContext):
         "username": data.get('username', ''),
         "first_name": data.get('first_name', ''),
         "last_name": data.get('last_name', ''),
+        "submitted_at": datetime.now().isoformat(),  # 👈 ДОБАВЛЕНО!
         "startup_name": data.get('startup_name', ''),
         "investment_status": data.get('investment_status', ''),
         "investment_amount": data.get('investment_amount', 0),
