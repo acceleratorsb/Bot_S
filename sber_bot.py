@@ -2,7 +2,7 @@ import asyncio
 import requests
 import os
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -45,7 +45,7 @@ def save_user_completion(user_id, username, first_name, last_name):
     """Сохраняет, что пользователь заполнил анкету"""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone(timedelta(hours=3))).isoformat()
     
     # Проверяем, есть ли пользователь
     c.execute('SELECT first_completed FROM users WHERE user_id = ?', (user_id,))
@@ -83,7 +83,7 @@ def update_last_reminder_sent(user_id):
     """Обновляет дату последнего напоминания"""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone(timedelta(hours=3))).isoformat()
     c.execute('UPDATE users SET last_reminder_sent = ? WHERE user_id = ?', (now, user_id))
     conn.commit()
     conn.close()
@@ -533,7 +533,7 @@ async def send_to_sheets(message: types.Message, state: FSMContext):
         "username": data.get('username', ''),
         "first_name": data.get('first_name', ''),
         "last_name": data.get('last_name', ''),
-        "submitted_at": datetime.now().isoformat(),  # 👈 ДАТА ОТПРАВКИ
+        "submitted_at": datetime.now(timezone(timedelta(hours=3))).isoformat(),  # 👈 МОСКОВСКОЕ ВРЕМЯ
         "startup_name": data.get('startup_name', ''),
         "investment_status": data.get('investment_status', ''),
         "investment_amount": data.get('investment_amount', 0),
@@ -602,9 +602,9 @@ async def send_monthly_reminder():
     print("Рассылка завершена!")
 
 async def schedule_monthly_reminder():
-    """Планирует ежемесячную рассылку на 3-е число каждого месяца в 10:00"""
+    """Планирует ежемесячную рассылку на 3-е число каждого месяца в 10:00 по московскому времени"""
     while True:
-        now = datetime.now()
+        now = datetime.now(timezone(timedelta(hours=3)))
         
         # Вычисляем следующее 3-е число
         year = now.year
@@ -620,11 +620,11 @@ async def schedule_monthly_reminder():
                 month += 1
         
         # Устанавливаем дату на 3-е число в 10:00
-        next_run = datetime(year, month, 3, 10, 0, 0)
+        next_run = datetime(year, month, 3, 10, 0, 0, tzinfo=timezone(timedelta(hours=3)))
         
         # Если мы перескочили из-за условия выше, но сегодня 3-е и ещё не 10:00 — запускаем сегодня
         if now.day == 3 and now.hour < 10:
-            next_run = datetime(now.year, now.month, 3, 10, 0, 0)
+            next_run = datetime(now.year, now.month, 3, 10, 0, 0, tzinfo=timezone(timedelta(hours=3)))
         
         wait_seconds = (next_run - now).total_seconds()
         print(f"⏰ Следующая рассылка запланирована на {next_run.strftime('%Y-%m-%d %H:%M')} (через {wait_seconds / 3600:.1f} часов)")
@@ -666,7 +666,7 @@ async def main():
     
     # Запускаем планировщик ежемесячной рассылки
     asyncio.create_task(schedule_monthly_reminder())
-    print("Планировщик ежемесячной рассылки запущен (каждое 3-е число в 10:00)")
+    print("Планировщик ежемесячной рассылки запущен (каждое 3-е число в 10:00 по Москве)")
     
     print("Бот запущен и работает через start_polling!")
     await dp.start_polling(bot)
