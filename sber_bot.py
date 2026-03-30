@@ -371,10 +371,10 @@ async def get_pilot_results(message: types.Message, state: FSMContext):
         await message.answer(
             "📢 Другие новости\n\n"
             "Поделитесь тем, что важно для вас и стартапа:\n\n"
-            "- технологические обновления (новый продукт, релиз, патент, пивот);\n\n"
+            "- технологические обновления (новый продукт, релиз, патент);\n\n"
             "- участие в мероприятиях, награды, партнерства;\n\n"
-            "- выход на новые рынки;\n\n"
-            "- или другие важные достижения и новости для стартапа.\n\n"
+            "- выход на новые рынки или любые другие достижения;\n\n"
+            "- или другие важные новости для стартапа.\n\n"
             "Если новостей нет — выберите вариант ниже.",
             reply_markup=get_news_keyboard()
         )
@@ -533,7 +533,7 @@ async def send_to_sheets(message: types.Message, state: FSMContext):
         "username": data.get('username', ''),
         "first_name": data.get('first_name', ''),
         "last_name": data.get('last_name', ''),
-        "submitted_at": datetime.now().isoformat(),  # 👈 ДОБАВЛЕНО!
+        "submitted_at": datetime.now().isoformat(),  # 👈 ДАТА ОТПРАВКИ
         "startup_name": data.get('startup_name', ''),
         "investment_status": data.get('investment_status', ''),
         "investment_amount": data.get('investment_amount', 0),
