@@ -25,7 +25,6 @@ dp = Dispatcher(storage=storage)
 
 # ==================== БАЗА ДАННЫХ ====================
 def init_db():
-    """Создаёт таблицу пользователей, если её нет"""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users
@@ -42,7 +41,6 @@ def init_db():
 init_db()
 
 def save_user_completion(user_id, username, first_name, last_name):
-    """Сохраняет, что пользователь заполнил анкету"""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     now = datetime.now(timezone(timedelta(hours=3))).isoformat()
@@ -66,7 +64,6 @@ def save_user_completion(user_id, username, first_name, last_name):
     print(f"✅ Пользователь {user_id} сохранён в базе")
 
 def get_users_to_notify():
-    """Получает пользователей, которым пора отправить напоминание (раз в месяц)"""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     c.execute('''SELECT user_id, first_name FROM users
@@ -77,7 +74,6 @@ def get_users_to_notify():
     return users
 
 def update_last_reminder_sent(user_id):
-    """Обновляет дату последнего напоминания"""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     now = datetime.now(timezone(timedelta(hours=3))).isoformat()
@@ -203,8 +199,7 @@ async def get_startup_name(message: types.Message, state: FSMContext):
     await state.update_data(startup_name=message.text)
     await state.set_state(Form.investment_status)
     await message.answer(
-        "💼 Инвестиции\n\n"
-        "Были ли у вас инвестиции за последний месяц?",
+        "💼 Инвестиции\n\nБыли ли у вас инвестиции за последний месяц?",
         reply_markup=get_invest_keyboard()
     )
 
@@ -245,7 +240,10 @@ async def get_investment_amount(message: types.Message, state: FSMContext):
         amount = float(message.text.replace(',', '.'))
         await state.update_data(investment_amount=amount)
         await state.set_state(Form.investment_source)
-        await message.answer("Укажите тип инвестиций\n(Бизнес-ангел, фонд, компания-партнёр и т.д.)\n\nНапример: фонд Восход")
+        await message.answer(
+            "Укажите тип инвестиций\n(Бизнес-ангел, фонд, компания-партнёр и т.д.)\n\n"
+            "Например: фонд Восход"
+        )
     except ValueError:
         await message.answer("Пожалуйста, введите число (например: 5 или 0,5)")
 
@@ -253,7 +251,10 @@ async def get_investment_amount(message: types.Message, state: FSMContext):
 async def get_investment_source(message: types.Message, state: FSMContext):
     await state.update_data(investment_source=message.text)
     await state.set_state(Form.investment_terms)
-    await message.answer("На каких условиях привлечены инвестиции?\n(Доля в компании, конвертируемый займ, грант и т.д.)\n\nНапример: 10% доли")
+    await message.answer(
+        "На каких условиях привлечены инвестиции?\n(Доля в компании, конвертируемый займ, грант и т.д.)\n\n"
+        "Например: 10% доли"
+    )
 
 @dp.message(Form.investment_terms)
 async def get_investment_terms(message: types.Message, state: FSMContext):
@@ -270,4 +271,414 @@ async def get_investment_terms(message: types.Message, state: FSMContext):
             "Какая выручка у стартапа была за последний месяц?\n\n"
             "Введите сумму в миллионах рублей.\n"
             "Если выручки не было — введите 0\n"
-            "Например: 1,5 (э
+            "Например: 1,5 (это 1,5 млн)"
+        )
+
+@dp.message(Form.revenue)
+async def get_revenue(message: types.Message, state: FSMContext):
+    try:
+        revenue = float(message.text.replace(',', '.'))
+        await state.update_data(revenue=revenue)
+        await state.set_state(Form.clients_count)
+        await message.answer(
+            "👥 Клиенты\n\n"
+            "Сколько клиентов у вас было за последний месяц?\n\n"
+            "Введите число.\n"
+            "Если клиентов не было — введите 0\n"
+            "Например: 15"
+        )
+    except ValueError:
+        await message.answer("Пожалуйста, введите число (например: 1,5 или 0,3)")
+
+@dp.message(Form.clients_count)
+async def get_clients_count(message: types.Message, state: FSMContext):
+    try:
+        clients = int(float(message.text.replace(',', '.')))
+        await state.update_data(clients_count=clients)
+        
+        data = await state.get_data()
+        if data.get('edit_mode') == 'revenue':
+            await state.update_data(edit_mode=None)
+            await show_summary(message, state)
+        else:
+            await state.set_state(Form.pilot_status)
+            await message.answer(
+                "✈️ Пилоты и партнёрства\n\n"
+                "Были ли новые пилоты с крупными компаниями за последний месяц?",
+                reply_markup=get_pilot_keyboard()
+            )
+    except ValueError:
+        await message.answer("Пожалуйста, введите целое число (например: 15)")
+
+@dp.callback_query(lambda c: c.data.startswith('pilot_'))
+async def process_pilot(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    if callback.data == "pilot_yes":
+        await state.update_data(pilot_status="✅ Да, запустили пилот")
+        await state.set_state(Form.pilot_company)
+        await callback.message.answer(
+            "С какой компанией запустили пилот?\n\n"
+            "Например: СберБизнес"
+        )
+    elif callback.data == "pilot_no":
+        await state.update_data(pilot_status="❌ Нет, пилотов не было", pilot_company='', pilot_essence='', pilot_results='')
+        
+        data = await state.get_data()
+        if data.get('edit_mode') == 'pilots':
+            await state.update_data(edit_mode=None)
+            await show_summary(callback.message, state)
+        else:
+            await state.set_state(Form.other_news)
+            await callback.message.answer(
+                "📢 Другие новости\n\n"
+                "Поделитесь тем, что важно для вас и стартапа:\n\n"
+                "- технологические обновления (новый продукт, релиз, патент)\n"
+                "- участие в мероприятиях, награды, партнерства\n"
+                "- выход на новые рынки или любые другие достижения\n"
+                "- или другие важные новости для стартапа\n\n"
+                "Если новостей нет — выберите вариант ниже.",
+                reply_markup=get_news_keyboard()
+            )
+
+@dp.message(Form.pilot_company)
+async def get_pilot_company(message: types.Message, state: FSMContext):
+    await state.update_data(pilot_company=message.text)
+    await state.set_state(Form.pilot_essence)
+    await message.answer(
+        "В чём суть пилота?\n\n"
+        "Например: тестирование нашей платформы на 100 сотрудниках"
+    )
+
+@dp.message(Form.pilot_essence)
+async def get_pilot_essence(message: types.Message, state: FSMContext):
+    await state.update_data(pilot_essence=message.text)
+    await state.set_state(Form.pilot_results)
+    await message.answer(
+        "Какие результаты ожидаете или уже получили?\n\n"
+        "Например: планируем увеличить продажи на 20%"
+    )
+
+@dp.message(Form.pilot_results)
+async def get_pilot_results(message: types.Message, state: FSMContext):
+    await state.update_data(pilot_results=message.text)
+    
+    data = await state.get_data()
+    if data.get('edit_mode') == 'pilots':
+        await state.update_data(edit_mode=None)
+        await show_summary(message, state)
+    else:
+        await state.set_state(Form.other_news)
+        await message.answer(
+            "📢 Другие новости\n\n"
+            "Поделитесь тем, что важно для вас и стартапа:\n\n"
+            "- технологические обновления (новый продукт, релиз, патент)\n"
+            "- участие в мероприятиях, награды, партнерства\n"
+            "- выход на новые рынки или любые другие достижения\n"
+            "- или другие важные новости для стартапа\n\n"
+            "Если новостей нет — выберите вариант ниже.",
+            reply_markup=get_news_keyboard()
+        )
+
+@dp.callback_query(lambda c: c.data.startswith('news_'))
+async def process_news(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    if callback.data == "news_share":
+        await callback.message.answer(
+            "📢 Расскажите, какие новости у вас были за последний месяц:"
+        )
+    elif callback.data == "news_none":
+        await state.update_data(other_news="Нет новостей")
+        
+        data = await state.get_data()
+        if data.get('edit_mode') == 'news':
+            await state.update_data(edit_mode=None)
+            await show_summary(callback.message, state)
+        else:
+            await show_summary(callback.message, state)
+
+@dp.message(Form.other_news)
+async def get_other_news_text(message: types.Message, state: FSMContext):
+    await state.update_data(other_news=message.text)
+    
+    data = await state.get_data()
+    if data.get('edit_mode') == 'news':
+        await state.update_data(edit_mode=None)
+        await show_summary(message, state)
+    else:
+        await show_summary(message, state)
+
+async def show_summary(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    
+    inv_amount = f"{data.get('investment_amount', 0):.2f}".replace('.', ',')
+    revenue = f"{data.get('revenue', 0):.2f}".replace('.', ',')
+    
+    pilot_text = data.get('pilot_status', '—')
+    if data.get('pilot_company'):
+        pilot_text = f"{pilot_text}\n   Компания: {data['pilot_company']}"
+    if data.get('pilot_essence'):
+        pilot_text = f"{pilot_text}\n   Суть: {data['pilot_essence']}"
+    if data.get('pilot_results'):
+        pilot_text = f"{pilot_text}\n   Результаты: {data['pilot_results']}"
+    
+    text = (
+        "📋 Проверьте информацию:\n\n"
+        f"📌 Название стартапа: {data.get('startup_name', '—')}\n\n"
+        f"💼 Инвестиции:\n"
+        f"   Статус: {data.get('investment_status', '—')}\n"
+        f"   Сумма: {inv_amount} млн ₽\n"
+        f"   Тип: {data.get('investment_source', '—')}\n"
+        f"   Условия: {data.get('investment_terms', '—')}\n\n"
+        f"💰 Финансы:\n"
+        f"   Выручка: {revenue} млн ₽\n"
+        f"   Клиентов: {data.get('clients_count', 0)}\n\n"
+        f"✈️ Пилоты: {pilot_text}\n\n"
+        f"📢 Новости: {data.get('other_news', '—')}"
+    )
+    
+    await state.set_state(Form.summary)
+    await message.answer(text, reply_markup=get_summary_keyboard())
+
+@dp.callback_query(lambda c: c.data.startswith('summary_'))
+async def process_summary(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    if callback.data == "summary_confirm":
+        await send_to_sheets(callback.message, state)
+    elif callback.data == "summary_edit":
+        await state.set_state(Form.edit_menu)
+        await callback.message.answer(
+            "Что хотите отредактировать?",
+            reply_markup=get_edit_keyboard()
+        )
+
+@dp.callback_query(lambda c: c.data.startswith('edit_'))
+async def process_edit(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    if callback.data == "edit_investments":
+        await state.update_data(
+            investment_status='',
+            investment_amount=0,
+            investment_source='',
+            investment_terms='',
+            edit_mode='investments'
+        )
+        await state.set_state(Form.investment_status)
+        await callback.message.answer(
+            "💼 Инвестиции\n\n"
+            "Были ли у вас инвестиции за последний месяц?",
+            reply_markup=get_invest_keyboard()
+        )
+    elif callback.data == "edit_revenue":
+        await state.update_data(revenue=0, clients_count=0, edit_mode='revenue')
+        await state.set_state(Form.revenue)
+        await callback.message.answer(
+            "💰 Выручка\n\n"
+            "Какая выручка у стартапа была за последний месяц?\n\n"
+            "Введите сумму в миллионах рублей.\n"
+            "Например: 1,5 (это 1,5 млн)"
+        )
+    elif callback.data == "edit_pilots":
+        await state.update_data(
+            pilot_status='',
+            pilot_company='',
+            pilot_essence='',
+            pilot_results='',
+            edit_mode='pilots'
+        )
+        await state.set_state(Form.pilot_status)
+        await callback.message.answer(
+            "✈️ Пилоты\n\n"
+            "Были ли новые пилоты за последний месяц?",
+            reply_markup=get_pilot_keyboard()
+        )
+    elif callback.data == "edit_news":
+        await state.update_data(other_news='', edit_mode='news')
+        await state.set_state(Form.other_news)
+        await callback.message.answer(
+            "📢 Другие новости\n\n"
+            "Поделитесь новостями или выберите вариант ниже.",
+            reply_markup=get_news_keyboard()
+        )
+    elif callback.data == "edit_restart":
+        await state.clear()
+        await cmd_start(callback.message, state)
+
+async def send_to_sheets(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    user_id = message.from_user.id
+
+    if not data.get('first_name'):
+        data['first_name'] = message.from_user.first_name
+    if not data.get('last_name'):
+        data['last_name'] = message.from_user.last_name
+    if not data.get('username'):
+        data['username'] = message.from_user.username
+
+    save_user_completion(
+        user_id=user_id,
+        username=data.get('username', ''),
+        first_name=data.get('first_name', ''),
+        last_name=data.get('last_name', '')
+    )
+
+    webhook_url = "https://flow.sokt.io/func/scri4EMJW50Q"
+
+    payload = {
+        "user_id": user_id,
+        "username": data.get('username', ''),
+        "first_name": data.get('first_name', ''),
+        "last_name": data.get('last_name', ''),
+        "submitted_at": datetime.now(timezone(timedelta(hours=3))).isoformat(),
+        "startup_name": data.get('startup_name', ''),
+        "investment_status": data.get('investment_status', ''),
+        "investment_amount": data.get('investment_amount', 0),
+        "investment_source": data.get('investment_source', ''),
+        "investment_terms": data.get('investment_terms', ''),
+        "revenue": data.get('revenue', 0),
+        "clients_count": data.get('clients_count', 0),
+        "pilot_status": data.get('pilot_status', ''),
+        "pilot_company": data.get('pilot_company', ''),
+        "pilot_essence": data.get('pilot_essence', ''),
+        "pilot_results": data.get('pilot_results', ''),
+        "other_news": data.get('other_news', '')
+    }
+
+    try:
+        response = requests.post(webhook_url, json=payload)
+        if response.status_code == 200:
+            await message.answer(
+                "✅ Готово! Спасибо за информацию, мы получили ваши данные!\n"
+                "Дайджест будет опубликован в сообществе выпускников.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+        else:
+            await message.answer(
+                f"⚠️ Ошибка отправки. Код: {response.status_code}",
+                reply_markup=ReplyKeyboardRemove()
+            )
+    except Exception as e:
+        await message.answer(
+            f"❌ Ошибка соединения: {e}",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        print(f"Ошибка отправки: {e}")
+
+    await state.clear()
+
+# ==================== ФОНОВЫЙ ПИНГ (KEEP-ALIVE) ====================
+
+async def keep_alive():
+    """Каждые 10 минут пингует бота, чтобы он не засыпал на Render"""
+    while True:
+        await asyncio.sleep(600)  # 10 минут
+        try:
+            requests.get("https://bot-s-tdrx.onrender.com/keepalive", timeout=5)
+            print("✅ Пинг выполнен, бот не спит")
+        except Exception as e:
+            print(f"❌ Ошибка пинга: {e}")
+
+# ==================== ЕЖЕМЕСЯЧНАЯ РАССЫЛКА ====================
+
+async def send_monthly_reminder():
+    print("Запускаем ежемесячную рассылку...")
+    users = get_users_to_notify()
+    print(f"Найдено пользователей для напоминания: {len(users)}")
+    
+    reminder_text = (
+        "📅 Мы собираем дайджест каждый месяц!\n\n"
+        "Расскажите, что у вас нового за этот месяц? "
+        "Нажмите кнопку, чтобы начать заполнение."
+    )
+    
+    for user in users:
+        user_id = user[0]
+        first_name = user[1] or "Друг"
+        try:
+            await bot.send_message(
+                user_id,
+                f"{first_name}, {reminder_text}",
+                reply_markup=start_keyboard
+            )
+            update_last_reminder_sent(user_id)
+            print(f"✅ Отправлено напоминание пользователю {user_id}")
+            await asyncio.sleep(0.05)
+        except Exception as e:
+            print(f"❌ Ошибка отправки пользователю {user_id}: {e}")
+    
+    print("Рассылка завершена!")
+
+async def schedule_monthly_reminder():
+    while True:
+        now = datetime.now(timezone(timedelta(hours=3)))
+        year = now.year
+        month = now.month
+        
+        if now.day >= 3 and now.hour >= 10:
+            if month == 12:
+                year += 1
+                month = 1
+            else:
+                month += 1
+        
+        next_run = datetime(year, month, 3, 10, 0, 0, tzinfo=timezone(timedelta(hours=3)))
+        
+        if now.day == 3 and now.hour < 10:
+            next_run = datetime(now.year, now.month, 3, 10, 0, 0, tzinfo=timezone(timedelta(hours=3)))
+        
+        wait_seconds = (next_run - now).total_seconds()
+        print(f"⏰ Следующая рассылка запланирована на {next_run.strftime('%Y-%m-%d %H:%M')} (через {wait_seconds / 3600:.1f} часов)")
+        
+        await asyncio.sleep(wait_seconds)
+        await send_monthly_reminder()
+
+# ==================== ВЕБ-СЕРВЕР ДЛЯ RENDER ====================
+
+app = Flask(__name__)
+
+@app.route('/')
+def health():
+    return "Bot is running!", 200
+
+@app.route('/ping')
+def ping():
+    return "OK", 200
+
+@app.route('/keepalive')
+def keepalive():
+    """Эндпоинт для поддержания бота в активном состоянии"""
+    return "OK", 200
+
+def run_web_server():
+    app.run(host='0.0.0.0', port=8000)
+
+# ==================== ЗАПУСК БОТА ====================
+
+async def main():
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        print("Webhook удалён!")
+    except Exception as e:
+        print(f"Ошибка удаления вебхука: {e}")
+    
+    web_thread = threading.Thread(target=run_web_server)
+    web_thread.daemon = True
+    web_thread.start()
+    print("Веб-сервер запущен на порту 8000")
+    
+    # Запускаем фоновую задачу пинга
+    asyncio.create_task(keep_alive())
+    print("✅ Фоновая задача пинга запущена (каждые 10 минут)")
+    
+    # Запускаем планировщик ежемесячной рассылки
+    asyncio.create_task(schedule_monthly_reminder())
+    print("Планировщик ежемесячной рассылки запущен (каждое 3-е число в 10:00 по Москве)")
+    
+    print("Бот запущен и работает через start_polling!")
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
