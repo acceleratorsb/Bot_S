@@ -114,7 +114,7 @@ def get_news_keyboard():
 def get_edit_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="💼 Инвестиции", callback_data="edit_investments")
-    builder.button(text="💰 Выручка и клиенты", callback_data="edit_revenue")
+    builder.button(text="💰 Выручка", callback_data="edit_revenue")
     builder.button(text="✈️ Пилоты", callback_data="edit_pilots")
     builder.button(text="📢 Другие новости", callback_data="edit_news")
     builder.button(text="🔄 Заполнить всё заново", callback_data="edit_restart")
@@ -137,7 +137,6 @@ class Form(StatesGroup):
     investment_source = State()
     investment_terms = State()
     revenue = State()
-    clients_count = State()
     pilot_status = State()
     pilot_company = State()
     pilot_essence = State()
@@ -162,13 +161,13 @@ async def cmd_start(message: types.Message, state: FSMContext):
     photo_path = "Картинки для бота/приветствие.png"
     
     welcome_text = (
-        f"Здравствуйте, {message.from_user.first_name}! 👋\n\n"
-        "Это акселераторы Сбера. 🚀\n\n"
-        "Хотим узнать, как обстоят дела с вашим стартапом:\n"
-        "есть ли достижения, как развивается стартап, есть ли пилоты и привлекли ли инвестиции?\n\n"
+        f"Здравствуй, {message.from_user.first_name}! 👋\n\n"
+        "Это акселераторы Сбера 🚀\n\n"
+        "Хотим узнать, как обстоят дела с твоим стартапом:\n"
+        "есть ли достижения, как развивается стартап, есть ли пилоты и привлекли ли инвестиции за последний месяц?\n\n"
         "Лучшие истории попадут в итоговый дайджест сообщества.\n\n"
-        "Заполните, пожалуйста, короткую форму — это займёт не более 2 минут.\n\n"
-        "Нажмите кнопку, чтобы начать."
+        "Заполни, пожалуйста, короткую форму — это займёт не более 2 минут.\n\n"
+        "Нажми кнопку, чтобы начать."
     )
     
     if os.path.exists(photo_path):
@@ -190,7 +189,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
 async def handle_start_button(message: types.Message, state: FSMContext):
     await state.set_state(Form.startup_name)
     await message.answer(
-        "Укажите название стартапа",
+        "Укажи название стартапа",
         reply_markup=ReplyKeyboardRemove()
     )
 
@@ -199,7 +198,7 @@ async def get_startup_name(message: types.Message, state: FSMContext):
     await state.update_data(startup_name=message.text)
     await state.set_state(Form.investment_status)
     await message.answer(
-        "💼 Инвестиции\n\nБыли ли у вас инвестиции за последний месяц?",
+        "💼 Инвестиции\n\nБыли ли у тебя инвестиции за последний месяц?",
         reply_markup=get_invest_keyboard()
     )
 
@@ -211,16 +210,16 @@ async def process_investment(callback: types.CallbackQuery, state: FSMContext):
         await state.update_data(investment_status="✅ Да, привлекли инвестиции")
         await state.set_state(Form.investment_amount)
         await callback.message.answer(
-            "Укажите сумму инвестиций за последний месяц.\n\n"
-            "Введите сумму в миллионах рублей (можно дробные).\n"
+            "Укажи сумму инвестиций за последний месяц.\n\n"
+            "Введи сумму в миллионах рублей (можно дробные).\n"
             "Например: 5 (это 5 млн), 0,5 (это 500 тыс.)"
         )
     elif data == "invest_process":
         await state.update_data(investment_status="🔄 В процессе привлечения")
         await state.set_state(Form.investment_amount)
         await callback.message.answer(
-            "Укажите сумму инвестиций за последний месяц.\n\n"
-            "Введите сумму в миллионах рублей (можно дробные).\n"
+            "Укажи сумму инвестиций за последний месяц.\n\n"
+            "Введи сумму в миллионах рублей (можно дробные).\n"
             "Например: 5 (это 5 млн), 0,5 (это 500 тыс.)"
         )
     elif data == "invest_no":
@@ -229,8 +228,8 @@ async def process_investment(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.answer(
             "💰 Выручка\n\n"
             "Какая выручка у стартапа была за последний месяц?\n\n"
-            "Введите сумму в миллионах рублей.\n"
-            "Если выручки не было — введите 0\n"
+            "Введи сумму в миллионах рублей.\n"
+            "Если выручки не было — введи 0\n"
             "Например: 1,5 (это 1,5 млн)"
         )
 
@@ -241,18 +240,18 @@ async def get_investment_amount(message: types.Message, state: FSMContext):
         await state.update_data(investment_amount=amount)
         await state.set_state(Form.investment_source)
         await message.answer(
-            "Укажите тип инвестиций\n(Бизнес-ангел, фонд, компания-партнёр и т.д.)\n\n"
+            "Укажи источник инвестиций\n(Бизнес-ангел, фонд, компания-партнёр и т.д.)\n\n"
             "Например: фонд Восход"
         )
     except ValueError:
-        await message.answer("Пожалуйста, введите число (например: 5 или 0,5)")
+        await message.answer("Пожалуйста, введи число (например: 5 или 0,5)")
 
 @dp.message(Form.investment_source)
 async def get_investment_source(message: types.Message, state: FSMContext):
     await state.update_data(investment_source=message.text)
     await state.set_state(Form.investment_terms)
     await message.answer(
-        "На каких условиях привлечены инвестиции?\n(Доля в компании, конвертируемый займ, грант и т.д.)\n\n"
+        "На каких условиях привлечены инвестиции?\n(Доля в компании, конвертируемый займ и т.д.)\n\n"
         "Например: 10% доли"
     )
 
@@ -269,8 +268,8 @@ async def get_investment_terms(message: types.Message, state: FSMContext):
         await message.answer(
             "💰 Выручка\n\n"
             "Какая выручка у стартапа была за последний месяц?\n\n"
-            "Введите сумму в миллионах рублей.\n"
-            "Если выручки не было — введите 0\n"
+            "Введи сумму в миллионах рублей.\n"
+            "Если выручки не было — введи 0\n"
             "Например: 1,5 (это 1,5 млн)"
         )
 
@@ -279,36 +278,14 @@ async def get_revenue(message: types.Message, state: FSMContext):
     try:
         revenue = float(message.text.replace(',', '.'))
         await state.update_data(revenue=revenue)
-        await state.set_state(Form.clients_count)
+        await state.set_state(Form.pilot_status)
         await message.answer(
-            "👥 Клиенты\n\n"
-            "Сколько клиентов у вас было за последний месяц?\n\n"
-            "Введите число.\n"
-            "Если клиентов не было — введите 0\n"
-            "Например: 15"
+            "✈️ Пилоты и партнёрства\n\n"
+            "Были ли новые пилоты с крупными компаниями за последний месяц?",
+            reply_markup=get_pilot_keyboard()
         )
     except ValueError:
-        await message.answer("Пожалуйста, введите число (например: 1,5 или 0,3)")
-
-@dp.message(Form.clients_count)
-async def get_clients_count(message: types.Message, state: FSMContext):
-    try:
-        clients = int(float(message.text.replace(',', '.')))
-        await state.update_data(clients_count=clients)
-        
-        data = await state.get_data()
-        if data.get('edit_mode') == 'revenue':
-            await state.update_data(edit_mode=None)
-            await show_summary(message, state)
-        else:
-            await state.set_state(Form.pilot_status)
-            await message.answer(
-                "✈️ Пилоты и партнёрства\n\n"
-                "Были ли новые пилоты с крупными компаниями за последний месяц?",
-                reply_markup=get_pilot_keyboard()
-            )
-    except ValueError:
-        await message.answer("Пожалуйста, введите целое число (например: 15)")
+        await message.answer("Пожалуйста, введи число (например: 1,5 или 0,3)")
 
 @dp.callback_query(lambda c: c.data.startswith('pilot_'))
 async def process_pilot(callback: types.CallbackQuery, state: FSMContext):
@@ -319,7 +296,7 @@ async def process_pilot(callback: types.CallbackQuery, state: FSMContext):
         await state.set_state(Form.pilot_company)
         await callback.message.answer(
             "С какой компанией запустили пилот?\n\n"
-            "Например: СберБизнес"
+            "Например: ПАО СберБанк"
         )
     elif callback.data == "pilot_no":
         await state.update_data(pilot_status="❌ Нет, пилотов не было", pilot_company='', pilot_essence='', pilot_results='')
@@ -332,12 +309,12 @@ async def process_pilot(callback: types.CallbackQuery, state: FSMContext):
             await state.set_state(Form.other_news)
             await callback.message.answer(
                 "📢 Другие новости\n\n"
-                "Поделитесь тем, что важно для вас и стартапа:\n\n"
-                "- технологические обновления (новый продукт, релиз, патент)\n"
-                "- участие в мероприятиях, награды, партнерства\n"
-                "- выход на новые рынки или любые другие достижения\n"
+                "Поделись тем, что важно для тебя и стартапа:\n\n"
+                "- технологические обновления (новый продукт, релиз, патент, pivot)\n"
+                "- участие в мероприятиях, награды, партнерства \n"
+                "- выход на новые рынки\n"
                 "- или другие важные новости для стартапа\n\n"
-                "Если новостей нет — выберите вариант ниже.",
+                "Если новостей нет — выбери вариант ниже.",
                 reply_markup=get_news_keyboard()
             )
 
@@ -355,7 +332,7 @@ async def get_pilot_essence(message: types.Message, state: FSMContext):
     await state.update_data(pilot_essence=message.text)
     await state.set_state(Form.pilot_results)
     await message.answer(
-        "Какие результаты ожидаете или уже получили?\n\n"
+        "Какие результаты ожидаешь или уже получил?\n\n"
         "Например: планируем увеличить продажи на 20%"
     )
 
@@ -371,12 +348,12 @@ async def get_pilot_results(message: types.Message, state: FSMContext):
         await state.set_state(Form.other_news)
         await message.answer(
             "📢 Другие новости\n\n"
-            "Поделитесь тем, что важно для вас и стартапа:\n\n"
-            "- технологические обновления (новый продукт, релиз, патент)\n"
+            "Поделись тем, что важно для тебя и стартапа:\n\n"
+            "- технологические обновления (новый продукт, релиз, патент, pivot)\n"
             "- участие в мероприятиях, награды, партнерства\n"
-            "- выход на новые рынки или любые другие достижения\n"
+            "- выход на новые рынки\n"
             "- или другие важные новости для стартапа\n\n"
-            "Если новостей нет — выберите вариант ниже.",
+            "Если новостей нет — выбери вариант ниже.",
             reply_markup=get_news_keyboard()
         )
 
@@ -386,7 +363,7 @@ async def process_news(callback: types.CallbackQuery, state: FSMContext):
     
     if callback.data == "news_share":
         await callback.message.answer(
-            "📢 Расскажите, какие новости у вас были за последний месяц:"
+            "📢 Расскажи, какие новости у тебя были за последний месяц:"
         )
     elif callback.data == "news_none":
         await state.update_data(other_news="Нет новостей")
@@ -429,11 +406,9 @@ async def show_summary(message: types.Message, state: FSMContext):
         f"💼 Инвестиции:\n"
         f"   Статус: {data.get('investment_status', '—')}\n"
         f"   Сумма: {inv_amount} млн ₽\n"
-        f"   Тип: {data.get('investment_source', '—')}\n"
+        f"   Источник: {data.get('investment_source', '—')}\n"
         f"   Условия: {data.get('investment_terms', '—')}\n\n"
-        f"💰 Финансы:\n"
-        f"   Выручка: {revenue} млн ₽\n"
-        f"   Клиентов: {data.get('clients_count', 0)}\n\n"
+        f"💰 Выручка: {revenue} млн ₽\n\n"
         f"✈️ Пилоты: {pilot_text}\n\n"
         f"📢 Новости: {data.get('other_news', '—')}"
     )
@@ -450,7 +425,7 @@ async def process_summary(callback: types.CallbackQuery, state: FSMContext):
     elif callback.data == "summary_edit":
         await state.set_state(Form.edit_menu)
         await callback.message.answer(
-            "Что хотите отредактировать?",
+            "Что хочешь отредактировать?",
             reply_markup=get_edit_keyboard()
         )
 
@@ -469,16 +444,16 @@ async def process_edit(callback: types.CallbackQuery, state: FSMContext):
         await state.set_state(Form.investment_status)
         await callback.message.answer(
             "💼 Инвестиции\n\n"
-            "Были ли у вас инвестиции за последний месяц?",
+            "Были ли у тебя инвестиции за последний месяц?",
             reply_markup=get_invest_keyboard()
         )
     elif callback.data == "edit_revenue":
-        await state.update_data(revenue=0, clients_count=0, edit_mode='revenue')
+        await state.update_data(revenue=0, edit_mode='revenue')
         await state.set_state(Form.revenue)
         await callback.message.answer(
             "💰 Выручка\n\n"
             "Какая выручка у стартапа была за последний месяц?\n\n"
-            "Введите сумму в миллионах рублей.\n"
+            "Введи сумму в миллионах рублей.\n"
             "Например: 1,5 (это 1,5 млн)"
         )
     elif callback.data == "edit_pilots":
@@ -500,7 +475,7 @@ async def process_edit(callback: types.CallbackQuery, state: FSMContext):
         await state.set_state(Form.other_news)
         await callback.message.answer(
             "📢 Другие новости\n\n"
-            "Поделитесь новостями или выберите вариант ниже.",
+            "Поделись новостями или выбери вариант ниже.",
             reply_markup=get_news_keyboard()
         )
     elif callback.data == "edit_restart":
@@ -539,7 +514,6 @@ async def send_to_sheets(message: types.Message, state: FSMContext):
         "investment_source": data.get('investment_source', ''),
         "investment_terms": data.get('investment_terms', ''),
         "revenue": data.get('revenue', 0),
-        "clients_count": data.get('clients_count', 0),
         "pilot_status": data.get('pilot_status', ''),
         "pilot_company": data.get('pilot_company', ''),
         "pilot_essence": data.get('pilot_essence', ''),
@@ -551,7 +525,7 @@ async def send_to_sheets(message: types.Message, state: FSMContext):
         response = requests.post(webhook_url, json=payload)
         if response.status_code == 200:
             await message.answer(
-                "✅ Готово! Спасибо за информацию, мы получили ваши данные!\n"
+                "✅ Готово! Спасибо за информацию, мы получили все данные!\n"
                 "Дайджест будет опубликован в сообществе выпускников.",
                 reply_markup=ReplyKeyboardRemove()
             )
@@ -590,8 +564,8 @@ async def send_monthly_reminder():
     
     reminder_text = (
         "📅 Мы собираем дайджест каждый месяц!\n\n"
-        "Расскажите, что у вас нового за этот месяц? "
-        "Нажмите кнопку, чтобы начать заполнение."
+        "Расскажи, что нового за этот месяц? "
+        "Нажми кнопку, чтобы начать заполнение."
     )
     
     for user in users:
