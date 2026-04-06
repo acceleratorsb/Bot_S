@@ -41,6 +41,7 @@ def init_db():
 init_db()
 
 def save_user_completion(user_id, username, first_name, last_name):
+    """Сохраняет или обновляет пользователя в базе"""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     now = datetime.now(timezone(timedelta(hours=3))).isoformat()
@@ -64,6 +65,7 @@ def save_user_completion(user_id, username, first_name, last_name):
     print(f"✅ Пользователь {user_id} сохранён в базе")
 
 def get_users_to_notify():
+    """Возвращает пользователей, которым пора отправить напоминание"""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     c.execute('''SELECT user_id, first_name FROM users
@@ -71,9 +73,11 @@ def get_users_to_notify():
                     OR datetime(last_reminder_sent) < datetime('now', '-30 days')''')
     users = c.fetchall()
     conn.close()
+    print(f"📊 Найдено пользователей для рассылки: {len(users)}")
     return users
 
 def update_last_reminder_sent(user_id):
+    """Обновляет дату последнего напоминания"""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     now = datetime.now(timezone(timedelta(hours=3))).isoformat()
@@ -187,6 +191,16 @@ async def cmd_start(message: types.Message, state: FSMContext):
 
 @dp.message(lambda message: message.text == "🚀 Начать заполнение")
 async def handle_start_button(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    
+    # Сохраняем пользователя в базу сразу при нажатии кнопки
+    save_user_completion(
+        user_id=user_id,
+        username=message.from_user.username or '',
+        first_name=message.from_user.first_name or '',
+        last_name=message.from_user.last_name or ''
+    )
+    
     await state.set_state(Form.startup_name)
     await message.answer(
         "Укажи название стартапа",
@@ -332,7 +346,7 @@ async def get_pilot_essence(message: types.Message, state: FSMContext):
     await state.update_data(pilot_essence=message.text)
     await state.set_state(Form.pilot_results)
     await message.answer(
-        "Какие результаты ожидаешь или уже получил?\n\n"
+        "Какие результаты уже есть или ожидаются?\n\n"
         "Например: планируем увеличить продажи на 20%"
     )
 
@@ -558,15 +572,19 @@ async def keep_alive():
 # ==================== ЕЖЕМЕСЯЧНАЯ РАССЫЛКА ====================
 
 async def send_monthly_reminder():
+    """Отправляет напоминание всем пользователям, которые давно не заполняли анкету"""
     print("Запускаем ежемесячную рассылку...")
     users = get_users_to_notify()
-    print(f"Найдено пользователей для напоминания: {len(users)}")
+    print(f"📊 Найдено пользователей для рассылки: {len(users)}")
     
     reminder_text = (
         "📅 Мы собираем дайджест каждый месяц!\n\n"
         "Расскажи, что нового за этот месяц? "
         "Нажми кнопку, чтобы начать заполнение."
     )
+    
+    success = 0
+    failed = 0
     
     for user in users:
         user_id = user[0]
@@ -578,33 +596,32 @@ async def send_monthly_reminder():
                 reply_markup=start_keyboard
             )
             update_last_reminder_sent(user_id)
+            success += 1
             print(f"✅ Отправлено напоминание пользователю {user_id}")
             await asyncio.sleep(0.05)
         except Exception as e:
+            failed += 1
             print(f"❌ Ошибка отправки пользователю {user_id}: {e}")
     
-    print("Рассылка завершена!")
+    print(f"📊 Рассылка завершена! Успешно: {success}, Ошибок: {failed}")
 
 async def schedule_monthly_reminder():
+    """Планирует рассылку на 3-е число каждого месяца в 10:00 по Москве"""
     while True:
         now = datetime.now(timezone(timedelta(hours=3)))
-        year = now.year
-        month = now.month
         
-        if now.day >= 3 and now.hour >= 10:
-            if month == 12:
-                year += 1
-                month = 1
+        # Целевая дата: 3-е число текущего месяца в 10:00
+        target = now.replace(day=3, hour=10, minute=0, second=0, microsecond=0)
+        
+        # Если 3-е число уже прошло в этом месяце, берём следующее 3-е число следующего месяца
+        if now.day > 3 or (now.day == 3 and now.hour >= 10):
+            if now.month == 12:
+                target = target.replace(year=now.year + 1, month=1)
             else:
-                month += 1
+                target = target.replace(month=now.month + 1)
         
-        next_run = datetime(year, month, 3, 10, 0, 0, tzinfo=timezone(timedelta(hours=3)))
-        
-        if now.day == 3 and now.hour < 10:
-            next_run = datetime(now.year, now.month, 3, 10, 0, 0, tzinfo=timezone(timedelta(hours=3)))
-        
-        wait_seconds = (next_run - now).total_seconds()
-        print(f"⏰ Следующая рассылка запланирована на {next_run.strftime('%Y-%m-%d %H:%M')} (через {wait_seconds / 3600:.1f} часов)")
+        wait_seconds = (target - now).total_seconds()
+        print(f"⏰ Следующая рассылка запланирована на {target.strftime('%Y-%m-%d %H:%M')} (через {wait_seconds / 3600:.1f} часов)")
         
         await asyncio.sleep(wait_seconds)
         await send_monthly_reminder()
