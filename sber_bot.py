@@ -670,6 +670,25 @@ async def main():
     
     print("Бот запущен и работает через start_polling!")
     await dp.start_polling(bot)
+#ЭТО ВРЕМЕННО ДЛЯ ПРОВЕРКИ 
+@dp.message(Command("db"))
+async def show_db(message: types.Message, state: FSMContext):
+    if message.from_user.id != 8409242586:
+        await message.answer("⛔ Нет прав")
+        return
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute("SELECT user_id, first_name, last_completed FROM users")
+    users = c.fetchall()
+    conn.close()
+    if not users:
+        await message.answer("База пуста")
+        return
+    text = "👥 Пользователи в базе:\n"
+    for u in users:
+        text += f"ID: {u[0]}, имя: {u[1]}, дата: {u[2]}\n"
+    await message.answer(text[:4000])
+#ЭТО ВРЕМЕННО ДЛЯ ПРОВЕРКИ 
 
 if __name__ == "__main__":
     asyncio.run(main())
