@@ -23,6 +23,9 @@ storage = MemoryStorage()
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(storage=storage)
 
+ADMIN_IDS = [
+    1123186704, ]
+
 # ==================== БАЗА ДАННЫХ ====================
 def init_db():
     conn = sqlite3.connect('users.db')
@@ -673,21 +676,32 @@ async def main():
 #ЭТО ВРЕМЕННО ДЛЯ ПРОВЕРКИ 
 @dp.message(Command("db"))
 async def show_db(message: types.Message, state: FSMContext):
-    if message.from_user.id != 8409242586:
-        await message.answer("⛔ Нет прав")
+    # Проверка: есть ли пользователь в списке админов
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Эта команда только для администраторов")
         return
+    
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    c.execute("SELECT user_id, first_name, last_completed FROM users")
+    c.execute("SELECT user_id, first_name, last_completed FROM users ORDER BY last_completed DESC")
     users = c.fetchall()
     conn.close()
+    
     if not users:
-        await message.answer("База пуста")
+        await message.answer("📭 База пользователей пуста")
         return
-    text = "👥 Пользователи в базе:\n"
+    
+    text = "👥 **Пользователи в базе:**\n\n"
     for u in users:
-        text += f"ID: {u[0]}, имя: {u[1]}, дата: {u[2]}\n"
-    await message.answer(text[:4000])
+        user_id, first_name, last_completed = u
+        name = first_name if first_name else "без имени"
+        date = last_completed[:16] if last_completed else "никогда"
+        text += f"• {name} (ID: `{user_id}`)\n   Последнее действие: {date}\n\n"
+    
+    if len(text) > 4000:
+        text = text[:4000] + "\n\n... (обрезано)"
+    
+    await message.answer(text, parse_mode="Markdown")
 #ЭТО ВРЕМЕННО ДЛЯ ПРОВЕРКИ 
 
 if __name__ == "__main__":
