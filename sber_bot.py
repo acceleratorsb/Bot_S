@@ -704,5 +704,17 @@ async def show_db(message: types.Message, state: FSMContext):
     await message.answer(text, parse_mode="Markdown")
 #ЭТО ВРЕМЕННО ДЛЯ ПРОВЕРКИ 
 
+# ==================== ТЕСТОВАЯ РАССЫЛКА ====================
+@dp.message(Command("test_reminder"))
+async def test_reminder(message: types.Message, state: FSMContext):
+    # Только для админов
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Эта команда только для администраторов")
+        return
+    
+    await message.answer("🔄 Запускаю тестовую рассылку...")
+    await send_monthly_reminder()
+    await message.answer("✅ Тестовая рассылка завершена! Проверь логи.")
+#тест
 if __name__ == "__main__":
     asyncio.run(main())
