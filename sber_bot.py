@@ -716,5 +716,92 @@ async def test_reminder(message: types.Message, state: FSMContext):
     await send_monthly_reminder()
     await message.answer("✅ Тестовая рассылка завершена! Проверь логи.")
 #тест
+# ==================== ПРОВЕРКА СТАТУСА ПОЛЬЗОВАТЕЛЕЙ ====================
+@dp.message(Command("check_reminder"))
+async def check_reminder(message: types.Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Нет прав")
+        return
+    
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute("SELECT user_id, first_name, last_reminder_sent FROM users")
+    users = c.fetchall()
+    conn.close()
+    
+    if not users:
+        await message.answer("📭 База пуста")
+        return
+    
+    text = "📋 **Статус пользователей:**\n\n"
+    for user_id, first_name, last_sent in users:
+        name = first_name if first_name else "без имени"
+        if last_sent is None:
+            status = "✅ получит рассылку (никогда не получал)"
+        else:
+            last_date = datetime.fromisoformat(last_sent)
+            days_passed = (datetime.now(timezone(timedelta(hours=3))) - last_date).days
+            if days_passed >= 30:
+                status = f"✅ получит рассылку (прошло {days_passed} дней)"
+            else:
+                status = f"❌ НЕ получит (прошло {days_passed} дней, нужно 30)"
+        text += f"• {name}: {status}\n"
+    
+    await message.answer(text[:4000], parse_mode="Markdown")
+
+
+# ==================== ПРИНУДИТЕЛЬНАЯ РАССЫЛКА (без проверки 30 дней) ====================
+@dp.message(Command("force_reminder"))
+async def force_reminder(message: types.Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Нет прав")
+        return
+    
+    await message.answer("🔄 Запускаю принудительную рассылку всем пользователям...")
+    
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute("SELECT user_id, first_name FROM users")
+    users = c.fetchall()
+    conn.close()
+    
+    if not users:
+        await message.answer("📭 База пользователей пуста")
+        return
+    
+    # Текст напоминания (как первое сообщение)
+    reminder_text = (
+        "📅 Мы собираем дайджест каждый месяц!\n\n"
+        "Расскажи, что нового случилось с твоим стартапом за этот месяц? "
+        "Какие достижения, пилоты, инвестиции?\n\n"
+        "Заполни, пожалуйста, короткую форму — это займёт не более 2 минут.\n\n"
+        "Нажми кнопку, чтобы начать."
+    )
+    
+    success = 0
+    failed = 0
+    
+    for user in users:
+        user_id, first_name = user
+        name = first_name if first_name else "Друг"
+        try:
+            await bot.send_message(
+                user_id,
+                f"{name}, {reminder_text}",
+                reply_markup=start_keyboard
+            )
+            success += 1
+            print(f"✅ Принудительно отправлено пользователю {user_id}")
+            await asyncio.sleep(0.05)
+        except Exception as e:
+            failed += 1
+            print(f"❌ Ошибка отправки пользователю {user_id}: {e}")
+    
+    await message.answer(
+        f"✅ Принудительная рассылка завершена!\n"
+        f"📊 Успешно: {success}\n"
+        f"❌ Ошибок: {failed}"
+    )
+
 if __name__ == "__main__":
     asyncio.run(main())
