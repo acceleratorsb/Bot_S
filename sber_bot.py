@@ -24,7 +24,8 @@ bot = Bot(token=API_TOKEN)
 dp = Dispatcher(storage=storage)
 
 ADMIN_IDS = [
-    1123186704, ]
+    1123186704,  # твой ID
+]
 
 # ==================== БАЗА ДАННЫХ ====================
 def init_db():
@@ -673,10 +674,10 @@ async def main():
     
     print("Бот запущен и работает через start_polling!")
     await dp.start_polling(bot)
-#ЭТО ВРЕМЕННО ДЛЯ ПРОВЕРКИ 
+
+# ==================== КОМАНДА ДЛЯ ПРОСМОТРА БАЗЫ ====================
 @dp.message(Command("db"))
 async def show_db(message: types.Message, state: FSMContext):
-    # Проверка: есть ли пользователь в списке админов
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Эта команда только для администраторов")
         return
@@ -702,12 +703,10 @@ async def show_db(message: types.Message, state: FSMContext):
         text = text[:4000] + "\n\n... (обрезано)"
     
     await message.answer(text, parse_mode="Markdown")
-#ЭТО ВРЕМЕННО ДЛЯ ПРОВЕРКИ 
 
 # ==================== ТЕСТОВАЯ РАССЫЛКА ====================
 @dp.message(Command("test_reminder"))
 async def test_reminder(message: types.Message, state: FSMContext):
-    # Только для админов
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Эта команда только для администраторов")
         return
@@ -715,7 +714,7 @@ async def test_reminder(message: types.Message, state: FSMContext):
     await message.answer("🔄 Запускаю тестовую рассылку...")
     await send_monthly_reminder()
     await message.answer("✅ Тестовая рассылка завершена! Проверь логи.")
-#тест
+
 # ==================== ПРОВЕРКА СТАТУСА ПОЛЬЗОВАТЕЛЕЙ ====================
 @dp.message(Command("check_reminder"))
 async def check_reminder(message: types.Message, state: FSMContext):
@@ -749,7 +748,6 @@ async def check_reminder(message: types.Message, state: FSMContext):
     
     await message.answer(text[:4000], parse_mode="Markdown")
 
-
 # ==================== ПРИНУДИТЕЛЬНАЯ РАССЫЛКА (без проверки 30 дней) ====================
 @dp.message(Command("force_reminder"))
 async def force_reminder(message: types.Message, state: FSMContext):
@@ -769,7 +767,6 @@ async def force_reminder(message: types.Message, state: FSMContext):
         await message.answer("📭 База пользователей пуста")
         return
     
-    # Текст напоминания (как первое сообщение)
     reminder_text = (
         "📅 Мы собираем дайджест каждый месяц!\n\n"
         "Расскажи, что нового случилось с твоим стартапом за этот месяц? "
@@ -802,6 +799,52 @@ async def force_reminder(message: types.Message, state: FSMContext):
         f"📊 Успешно: {success}\n"
         f"❌ Ошибок: {failed}"
     )
+
+# ==================== БЭКАП И ВОССТАНОВЛЕНИЕ БАЗЫ ====================
+@dp.message(Command("backup"))
+async def backup_db(message: types.Message, state: FSMContext):
+    """Отправляет файл базы данных в Telegram"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Нет прав")
+        return
+    
+    if os.path.exists('users.db'):
+        with open('users.db', 'rb') as f:
+            await message.answer_document(
+                types.BufferedInputFile(f.read(), filename='users.db'),
+                caption="📦 Бэкап базы пользователей"
+            )
+        await message.answer("✅ База сохранена! Сохраните этот файл.")
+    else:
+        await message.answer("❌ Файл базы не найден")
+
+@dp.message(Command("restore"))
+async def restore_db(message: types.Message, state: FSMContext):
+    """Восстанавливает базу данных из присланного файла"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Нет прав")
+        return
+    
+    if not message.document:
+        await message.answer("❌ Отправьте файл users.db командой /restore с файлом")
+        return
+    
+    if message.document.file_name != 'users.db':
+        await message.answer("❌ Файл должен называться users.db")
+        return
+    
+    await message.answer("🔄 Загружаю файл...")
+    
+    try:
+        file = await bot.get_file(message.document.file_id)
+        file_data = await bot.download_file(file.file_path)
+        
+        with open('users.db', 'wb') as f:
+            f.write(file_data.read())
+        
+        await message.answer("✅ База восстановлена! Бот будет использовать её.")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка восстановления: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())
