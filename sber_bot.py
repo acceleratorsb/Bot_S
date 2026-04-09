@@ -813,4 +813,123 @@ async def test_reminder(message: types.Message, state: FSMContext):
         try:
             await bot.send_message(
                 user_id,
-                f"{first
+                f"{first_name}, {reminder_text}",
+                reply_markup=start_keyboard
+            )
+            update_last_reminder_sent(user_id)
+            success += 1
+            await asyncio.sleep(0.05)
+        except Exception as e:
+            failed += 1
+            print(f"❌ Ошибка пользователю {user_id}: {e}")
+    
+    await message.answer(f"✅ Тестовая рассылка завершена!\n📊 Успешно: {success}\n❌ Ошибок: {failed}")
+
+@dp.message(Command("force_reminder"))
+async def force_reminder(message: types.Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Нет прав")
+        return
+    
+    await message.answer("🔄 Запускаю принудительную рассылку всем пользователям...")
+    
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute("SELECT user_id, first_name FROM users")
+    users = c.fetchall()
+    conn.close()
+    
+    if not users:
+        await message.answer("📭 База пользователей пуста")
+        return
+    
+    reminder_text = (
+        "📅 Мы собираем дайджест каждый месяц!\n\n"
+        "Расскажи, что нового случилось с твоим стартапом за этот месяц? "
+        "Какие достижения, пилоты, инвестиции?\n\n"
+        "Заполни, пожалуйста, короткую форму — это займёт не более 2 минут.\n\n"
+        "Нажми кнопку, чтобы начать."
+    )
+    
+    success = 0
+    failed = 0
+    
+    for user in users:
+        user_id = user[0]
+        first_name = user[1] or "Друг"
+        try:
+            await bot.send_message(
+                user_id,
+                f"{first_name}, {reminder_text}",
+                reply_markup=start_keyboard
+            )
+            success += 1
+            await asyncio.sleep(0.05)
+        except Exception as e:
+            failed += 1
+            print(f"❌ Ошибка пользователю {user_id}: {e}")
+    
+    await message.answer(
+        f"✅ Принудительная рассылка завершена!\n"
+        f"📊 Успешно: {success}\n"
+        f"❌ Ошибок: {failed}"
+    )
+
+@dp.message(Command("monthly_reminder"))
+async def monthly_reminder(message: types.Message, state: FSMContext):
+    """Ручная рассылка (как автоматическая, с картинкой и отчётом)"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Нет прав")
+        return
+    
+    await message.answer("🔄 Запускаю ручную рассылку...")
+    await auto_monthly_reminder()
+    await message.answer("✅ Ручная рассылка завершена!")
+
+@dp.message(Command("backup"))
+async def backup_db(message: types.Message, state: FSMContext):
+    """Отправляет файл базы данных в Telegram"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Нет прав")
+        return
+    
+    if os.path.exists('users.db'):
+        with open('users.db', 'rb') as f:
+            await message.answer_document(
+                types.BufferedInputFile(f.read(), filename='users.db'),
+                caption="📦 Бэкап базы пользователей"
+            )
+        await message.answer("✅ База сохранена! Сохраните этот файл.")
+    else:
+        await message.answer("❌ Файл базы не найден")
+
+@dp.message(Command("restore"))
+async def restore_db(message: types.Message, state: FSMContext):
+    """Восстанавливает базу данных из присланного файла"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Нет прав")
+        return
+    
+    if not message.document:
+        await message.answer("❌ Отправьте файл users.db командой /restore с файлом")
+        return
+    
+    if message.document.file_name != 'users.db':
+        await message.answer("❌ Файл должен называться users.db")
+        return
+    
+    await message.answer("🔄 Загружаю файл...")
+    
+    try:
+        file = await bot.get_file(message.document.file_id)
+        file_data = await bot.download_file(file.file_path)
+        
+        with open('users.db', 'wb') as f:
+            f.write(file_data.read())
+        
+        await message.answer("✅ База восстановлена! Бот будет использовать её.")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка восстановления: {e}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
