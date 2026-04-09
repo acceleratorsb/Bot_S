@@ -69,7 +69,7 @@ def save_user_completion(user_id, username, first_name, last_name):
     print(f"✅ Пользователь {user_id} сохранён в базе")
 
 def get_users_to_notify():
-    """Возвращает пользователей, которым пора отправить напоминание"""
+    """Возвращает пользователей, которым пора отправить напоминание (для обратной совместимости)"""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     c.execute('''SELECT user_id, first_name FROM users
@@ -258,7 +258,7 @@ async def get_investment_amount(message: types.Message, state: FSMContext):
         await state.update_data(investment_amount=amount)
         await state.set_state(Form.investment_source)
         await message.answer(
-            "Укажи источник инвестиций\n(Бизнес-ангел, фонд, компания-партнёр и т.д.)\n\n"
+            "Укажи источник инвестиций: тип\n(Бизнес-ангел, фонд, компания-партнёр и т.д.)\n\nА также наименование или ФИО инвестора\n\n"
             "Например: фонд Восход"
         )
     except ValueError:
@@ -314,7 +314,7 @@ async def process_pilot(callback: types.CallbackQuery, state: FSMContext):
         await state.set_state(Form.pilot_company)
         await callback.message.answer(
             "С какой компанией запустили пилот?\n\n"
-            "Например: ПАО СберБанк"
+            "Например: ПАО Сбербанк"
         )
     elif callback.data == "pilot_no":
         await state.update_data(pilot_status="❌ Нет, пилотов не было", pilot_company='', pilot_essence='', pilot_results='')
@@ -573,51 +573,104 @@ async def keep_alive():
         except Exception as e:
             print(f"❌ Ошибка пинга: {e}")
 
-# ==================== ЕЖЕМЕСЯЧНАЯ РАССЫЛКА ====================
+# ==================== АВТОМАТИЧЕСКАЯ ЕЖЕМЕСЯЧНАЯ РАССЫЛКА (с картинкой и отчётом) ====================
 
-async def send_monthly_reminder():
-    """Отправляет напоминание всем пользователям, которые давно не заполняли анкету"""
-    print("Запускаем ежемесячную рассылку...")
-    users = get_users_to_notify()
-    print(f"📊 Найдено пользователей для рассылки: {len(users)}")
+async def auto_monthly_reminder():
+    """Автоматическая рассылка 3-го числа с отчётом админу"""
+    print("Запускаем автоматическую ежемесячную рассылку...")
+    
+    # Получаем всех пользователей из базы
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute("SELECT user_id, first_name, username FROM users")
+    users = c.fetchall()
+    conn.close()
+    
+    if not users:
+        print("📭 База пользователей пуста")
+        for admin_id in ADMIN_IDS:
+            await bot.send_message(admin_id, "📭 База пользователей пуста. Рассылка не выполнена.")
+        return
     
     reminder_text = (
         "📅 Мы собираем дайджест каждый месяц!\n\n"
-        "Расскажи, что нового за этот месяц? "
-        "Нажми кнопку, чтобы начать заполнение."
+        "Расскажи, что нового случилось с твоим стартапом за этот месяц? "
+        "Какие достижения, пилоты, инвестиции?\n\n"
+        "Заполни, пожалуйста, короткую форму — это займёт не более 2 минут.\n\n"
+        "Нажми кнопку, чтобы начать."
     )
     
-    success = 0
-    failed = 0
+    photo_path = "Картинки для бота/приветствие.png"
+    
+    success = []
+    failed = []
     
     for user in users:
         user_id = user[0]
-        first_name = user[1] or "Друг"
+        first_name = user[1] or ""
+        username = user[2] or "нет username"
+        
+        # Формируем текст с обращением или без
+        if first_name:
+            caption = f"{first_name}, {reminder_text}"
+        else:
+            caption = reminder_text
+        
         try:
-            await bot.send_message(
-                user_id,
-                f"{first_name}, {reminder_text}",
-                reply_markup=start_keyboard
-            )
-            update_last_reminder_sent(user_id)
-            success += 1
-            print(f"✅ Отправлено напоминание пользователю {user_id}")
+            if os.path.exists(photo_path):
+                photo = FSInputFile(photo_path)
+                await bot.send_photo(
+                    user_id,
+                    photo=photo,
+                    caption=caption,
+                    reply_markup=start_keyboard
+                )
+            else:
+                await bot.send_message(
+                    user_id,
+                    caption,
+                    reply_markup=start_keyboard
+                )
+            success.append(f"{first_name if first_name else 'Без имени'} (@{username})")
+            print(f"✅ Отправлено пользователю {user_id}")
             await asyncio.sleep(0.05)
         except Exception as e:
-            failed += 1
-            print(f"❌ Ошибка отправки пользователю {user_id}: {e}")
+            failed.append(f"{first_name if first_name else 'Без имени'} (@{username}) — {str(e)[:50]}")
+            print(f"❌ Ошибка пользователю {user_id}: {e}")
     
-    print(f"📊 Рассылка завершена! Успешно: {success}, Ошибок: {failed}")
+    # Формируем отчёт для админа
+    report = f"📅 **Ежемесячная рассылка завершена!**\n\n"
+    report += f"📊 **Успешно:** {len(success)}\n"
+    report += f"❌ **Ошибок:** {len(failed)}\n\n"
+    
+    if success:
+        report += "**✅ Получили:**\n"
+        for s in success[:20]:
+            report += f"• {s}\n"
+        if len(success) > 20:
+            report += f"\n... и ещё {len(success) - 20} человек(а)\n"
+    
+    if failed:
+        report += "\n**❌ Не получили:**\n"
+        for f in failed[:20]:
+            report += f"• {f}\n"
+        if len(failed) > 20:
+            report += f"\n... и ещё {len(failed) - 20} ошибок"
+    
+    for admin_id in ADMIN_IDS:
+        await bot.send_message(admin_id, report[:4000], parse_mode="Markdown")
+    
+    print("Автоматическая рассылка завершена!")
 
-async def schedule_monthly_reminder():
-    """Планирует рассылку на 3-е число каждого месяца в 10:00 по Москве"""
+
+async def schedule_auto_monthly():
+    """Планирует автоматическую рассылку на 3-е число каждого месяца в 10:00"""
     while True:
         now = datetime.now(timezone(timedelta(hours=3)))
         
         # Целевая дата: 3-е число текущего месяца в 10:00
         target = now.replace(day=3, hour=10, minute=0, second=0, microsecond=0)
         
-        # Если 3-е число уже прошло в этом месяце, берём следующее 3-е число следующего месяца
         if now.day > 3 or (now.day == 3 and now.hour >= 10):
             if now.month == 12:
                 target = target.replace(year=now.year + 1, month=1)
@@ -625,10 +678,10 @@ async def schedule_monthly_reminder():
                 target = target.replace(month=now.month + 1)
         
         wait_seconds = (target - now).total_seconds()
-        print(f"⏰ Следующая рассылка запланирована на {target.strftime('%Y-%m-%d %H:%M')} (через {wait_seconds / 3600:.1f} часов)")
+        print(f"⏰ Следующая автоматическая рассылка запланирована на {target.strftime('%Y-%m-%d %H:%M')} (через {wait_seconds / 3600:.1f} часов)")
         
         await asyncio.sleep(wait_seconds)
-        await send_monthly_reminder()
+        await auto_monthly_reminder()
 
 # ==================== ВЕБ-СЕРВЕР ДЛЯ RENDER ====================
 
@@ -644,7 +697,6 @@ def ping():
 
 @app.route('/keepalive')
 def keepalive():
-    """Эндпоинт для поддержания бота в активном состоянии"""
     return "OK", 200
 
 def run_web_server():
@@ -668,14 +720,15 @@ async def main():
     asyncio.create_task(keep_alive())
     print("✅ Фоновая задача пинга запущена (каждые 10 минут)")
     
-    # Запускаем планировщик ежемесячной рассылки
-    asyncio.create_task(schedule_monthly_reminder())
-    print("Планировщик ежемесячной рассылки запущен (каждое 3-е число в 10:00 по Москве)")
+    # Запускаем планировщик АВТОМАТИЧЕСКОЙ ежемесячной рассылки
+    asyncio.create_task(schedule_auto_monthly())
+    print("✅ Планировщик АВТОМАТИЧЕСКОЙ ежемесячной рассылки запущен (3-е число в 10:00)")
     
     print("Бот запущен и работает через start_polling!")
     await dp.start_polling(bot)
 
-# ==================== КОМАНДА ДЛЯ ПРОСМОТРА БАЗЫ ====================
+# ==================== АДМИНСКИЕ КОМАНДЫ ====================
+
 @dp.message(Command("db"))
 async def show_db(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
@@ -704,18 +757,6 @@ async def show_db(message: types.Message, state: FSMContext):
     
     await message.answer(text, parse_mode="Markdown")
 
-# ==================== ТЕСТОВАЯ РАССЫЛКА ====================
-@dp.message(Command("test_reminder"))
-async def test_reminder(message: types.Message, state: FSMContext):
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("⛔ Эта команда только для администраторов")
-        return
-    
-    await message.answer("🔄 Запускаю тестовую рассылку...")
-    await send_monthly_reminder()
-    await message.answer("✅ Тестовая рассылка завершена! Проверь логи.")
-
-# ==================== ПРОВЕРКА СТАТУСА ПОЛЬЗОВАТЕЛЕЙ ====================
 @dp.message(Command("check_reminder"))
 async def check_reminder(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
@@ -748,103 +789,28 @@ async def check_reminder(message: types.Message, state: FSMContext):
     
     await message.answer(text[:4000], parse_mode="Markdown")
 
-# ==================== ПРИНУДИТЕЛЬНАЯ РАССЫЛКА (без проверки 30 дней) ====================
-@dp.message(Command("force_reminder"))
-async def force_reminder(message: types.Message, state: FSMContext):
+@dp.message(Command("test_reminder"))
+async def test_reminder(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
-        await message.answer("⛔ Нет прав")
+        await message.answer("⛔ Эта команда только для администраторов")
         return
     
-    await message.answer("🔄 Запускаю принудительную рассылку всем пользователям...")
+    await message.answer("🔄 Запускаю тестовую рассылку...")
     
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
-    c.execute("SELECT user_id, first_name FROM users")
-    users = c.fetchall()
-    conn.close()
-    
-    if not users:
-        await message.answer("📭 База пользователей пуста")
-        return
-    
+    users = get_users_to_notify()
     reminder_text = (
         "📅 Мы собираем дайджест каждый месяц!\n\n"
-        "Расскажи, что нового случилось с твоим стартапом за этот месяц? "
-        "Какие достижения, пилоты, инвестиции?\n\n"
-        "Заполни, пожалуйста, короткую форму — это займёт не более 2 минут.\n\n"
-        "Нажми кнопку, чтобы начать."
+        "Расскажи, что нового за этот месяц? "
+        "Нажми кнопку, чтобы начать заполнение."
     )
     
     success = 0
     failed = 0
     
     for user in users:
-        user_id, first_name = user
-        name = first_name if first_name else "Друг"
+        user_id = user[0]
+        first_name = user[1] or "Друг"
         try:
             await bot.send_message(
                 user_id,
-                f"{name}, {reminder_text}",
-                reply_markup=start_keyboard
-            )
-            success += 1
-            print(f"✅ Принудительно отправлено пользователю {user_id}")
-            await asyncio.sleep(0.05)
-        except Exception as e:
-            failed += 1
-            print(f"❌ Ошибка отправки пользователю {user_id}: {e}")
-    
-    await message.answer(
-        f"✅ Принудительная рассылка завершена!\n"
-        f"📊 Успешно: {success}\n"
-        f"❌ Ошибок: {failed}"
-    )
-
-# ==================== БЭКАП И ВОССТАНОВЛЕНИЕ БАЗЫ ====================
-@dp.message(Command("backup"))
-async def backup_db(message: types.Message, state: FSMContext):
-    """Отправляет файл базы данных в Telegram"""
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("⛔ Нет прав")
-        return
-    
-    if os.path.exists('users.db'):
-        with open('users.db', 'rb') as f:
-            await message.answer_document(
-                types.BufferedInputFile(f.read(), filename='users.db'),
-                caption="📦 Бэкап базы пользователей"
-            )
-        await message.answer("✅ База сохранена! Сохраните этот файл.")
-    else:
-        await message.answer("❌ Файл базы не найден")
-
-@dp.message(Command("restore"))
-async def restore_db(message: types.Message, state: FSMContext):
-    """Восстанавливает базу данных из присланного файла"""
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("⛔ Нет прав")
-        return
-    
-    if not message.document:
-        await message.answer("❌ Отправьте файл users.db командой /restore с файлом")
-        return
-    
-    if message.document.file_name != 'users.db':
-        await message.answer("❌ Файл должен называться users.db")
-        return
-    
-    await message.answer("🔄 Загружаю файл...")
-    
-    try:
-        file = await bot.get_file(message.document.file_id)
-        file_data = await bot.download_file(file.file_path)
-        
-        with open('users.db', 'wb') as f:
-            f.write(file_data.read())
-        
-        await message.answer("✅ База восстановлена! Бот будет использовать её.")
-    except Exception as e:
-        await message.answer(f"❌ Ошибка восстановления: {e}")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+                f"{first
