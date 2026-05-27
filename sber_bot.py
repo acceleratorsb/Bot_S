@@ -15,19 +15,19 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import FSInputFile
 from flask import Flask
 import threading
-
+ 
 API_TOKEN = '8409242586:AAGeTLoHT2pbOK1n1IiaTNTb8Pvj1YT3_WU'
-
+ 
 storage = MemoryStorage()
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(storage=storage)
-
+ 
 ADMIN_IDS = [
     1123186704,
 ]
-
+ 
 # ==================== БАЗА ДАННЫХ ====================
-
+ 
 def init_db():
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
@@ -41,9 +41,9 @@ def init_db():
                   last_reminder_sent TEXT)''')
     conn.commit()
     conn.close()
-
+ 
 init_db()
-
+ 
 def save_user_completion(user_id, username, first_name, last_name):
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
@@ -59,7 +59,7 @@ def save_user_completion(user_id, username, first_name, last_name):
     conn.commit()
     conn.close()
     print(f"✅ Пользователь {user_id} сохранён в базе")
-
+ 
 def get_all_users():
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
@@ -67,7 +67,7 @@ def get_all_users():
     users = c.fetchall()
     conn.close()
     return users
-
+ 
 def update_last_reminder_sent(user_id):
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
@@ -75,9 +75,9 @@ def update_last_reminder_sent(user_id):
     c.execute('UPDATE users SET last_reminder_sent=? WHERE user_id=?', (now, user_id))
     conn.commit()
     conn.close()
-
+ 
 # ==================== АВТОБЭКАП ====================
-
+ 
 async def auto_backup():
     """Каждые 3 дня отправляет бэкап базы всем админам"""
     while True:
@@ -95,9 +95,9 @@ async def auto_backup():
                 except Exception as e:
                     print(f"❌ Ошибка автобэкапа для {admin_id}: {e}")
         print("✅ Автобэкап выполнен")
-
+ 
 # ==================== ПАРСЕР СУММЫ ====================
-
+ 
 def parse_amount(text: str):
     text = text.strip().lower()
     text = re.sub(r'(\d)\s+(\d)', r'\1\2', text)
@@ -115,7 +115,7 @@ def parse_amount(text: str):
         return number / 1_000_000
     else:
         return number
-
+ 
 def format_amount(amount_mln: float) -> str:
     if amount_mln == 0:
         return "0 млн ₽"
@@ -133,15 +133,15 @@ def format_amount(amount_mln: float) -> str:
             return f"{int(amount_mln)} млн ₽"
         else:
             return f"{amount_mln:g} млн ₽"
-
+ 
 # ==================== КЛАВИАТУРЫ ====================
-
+ 
 start_keyboard = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="🚀 Начать заполнение")]],
     resize_keyboard=True,
     one_time_keyboard=True
 )
-
+ 
 def get_invest_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Да, привлекли инвестиции (не гранты)", callback_data="invest_yes")
@@ -149,28 +149,28 @@ def get_invest_keyboard():
     builder.button(text="❌ Нет, не было инвестиций", callback_data="invest_no")
     builder.adjust(1)
     return builder.as_markup()
-
+ 
 def get_amount_confirm_keyboard(field: str):
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Верно, продолжить", callback_data=f"amount_ok_{field}")
     builder.button(text="✏️ Исправить", callback_data=f"amount_fix_{field}")
     builder.adjust(1)
     return builder.as_markup()
-
+ 
 def get_pilot_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Да, запустили пилот", callback_data="pilot_yes")
     builder.button(text="❌ Нет, пилотов не было", callback_data="pilot_no")
     builder.adjust(1)
     return builder.as_markup()
-
+ 
 def get_news_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="🔹 Поделиться новостями", callback_data="news_share")
     builder.button(text="🔸 Нет новостей за месяц", callback_data="news_none")
     builder.adjust(1)
     return builder.as_markup()
-
+ 
 def get_edit_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="💼 Инвестиции", callback_data="edit_investments")
@@ -180,14 +180,14 @@ def get_edit_keyboard():
     builder.button(text="🔄 Заполнить всё заново", callback_data="edit_restart")
     builder.adjust(1)
     return builder.as_markup()
-
+ 
 def get_summary_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Всё верно, отправить", callback_data="summary_confirm")
     builder.button(text="✏️ Редактировать ответ", callback_data="summary_edit")
     builder.adjust(1)
     return builder.as_markup()
-
+ 
 def get_broadcast_confirm_keyboard():
     """Кнопки подтверждения рассылки для админа"""
     builder = InlineKeyboardBuilder()
@@ -195,9 +195,9 @@ def get_broadcast_confirm_keyboard():
     builder.button(text="❌ Нет, отменить", callback_data="broadcast_no")
     builder.adjust(1)
     return builder.as_markup()
-
+ 
 # ==================== КЛАСС СОСТОЯНИЙ ====================
-
+ 
 class Form(StatesGroup):
     startup_name = State()
     investment_status = State()
@@ -216,9 +216,9 @@ class Form(StatesGroup):
     other_news = State()
     summary = State()
     edit_menu = State()
-
+ 
 # ==================== СТАРТ ====================
-
+ 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
@@ -228,7 +228,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         first_name=message.from_user.first_name,
         last_name=message.from_user.last_name
     )
-
+ 
     photo_path = "Картинки для бота/приветствие.png"
     welcome_text = (
         f"Привет, {message.from_user.first_name}! 👋\n\n"
@@ -239,7 +239,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         "Заполни короткую форму — это займёт не больше 2 минут. "
         "Жми на кнопку, поехали! 👇"
     )
-
+ 
     if os.path.exists(photo_path):
         try:
             photo = FSInputFile(photo_path)
@@ -249,7 +249,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
             await message.answer(welcome_text, reply_markup=start_keyboard)
     else:
         await message.answer(welcome_text, reply_markup=start_keyboard)
-
+ 
 @dp.message(lambda message: message.text == "🚀 Начать заполнение")
 async def handle_start_button(message: types.Message, state: FSMContext):
     save_user_completion(
@@ -260,7 +260,7 @@ async def handle_start_button(message: types.Message, state: FSMContext):
     )
     await state.set_state(Form.startup_name)
     await message.answer("Укажи название стартапа", reply_markup=ReplyKeyboardRemove())
-
+ 
 @dp.message(Form.startup_name)
 async def get_startup_name(message: types.Message, state: FSMContext):
     await state.update_data(startup_name=message.text)
@@ -273,9 +273,9 @@ async def get_startup_name(message: types.Message, state: FSMContext):
         "Выбери свой вариант 👇",
         reply_markup=get_invest_keyboard()
     )
-
+ 
 # ==================== ВЕТКА А — ПРИВЛЕКЛИ ====================
-
+ 
 @dp.callback_query(lambda c: c.data == "invest_yes")
 async def process_invest_yes(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -287,7 +287,7 @@ async def process_invest_yes(callback: types.CallbackQuery, state: FSMContext):
         "Можно писать как удобно: <b>5 млн</b>, <b>500 тыс</b>, <b>5 000 000</b> или просто <b>5</b>",
         parse_mode="HTML"
     )
-
+ 
 @dp.message(Form.investment_amount)
 async def get_investment_amount(message: types.Message, state: FSMContext):
     amount = parse_amount(message.text)
@@ -305,7 +305,7 @@ async def get_investment_amount(message: types.Message, state: FSMContext):
         parse_mode="HTML",
         reply_markup=get_amount_confirm_keyboard("inv")
     )
-
+ 
 @dp.callback_query(lambda c: c.data == "amount_ok_inv")
 async def investment_amount_confirmed(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -315,17 +315,17 @@ async def investment_amount_confirmed(callback: types.CallbackQuery, state: FSMC
         "Можешь написать название или ФИО.\n\n"
         "⚠️ Гранты по-прежнему не вписываем сюда 🙂"
     )
-
+ 
 @dp.callback_query(lambda c: c.data == "amount_fix_inv")
 async def investment_amount_fix(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     await state.set_state(Form.investment_amount)
     await callback.message.answer(
-        "Введи сумму снова. Допиши единицу, чтобы я точно понял:\n\n"
-        "Например: <b>5 млн</b>, <b>500 тыс</b>, <b>1,5 млрд</b>",
+        "Введи сумму снова — только цифру в млн:\n\n"
+        "Например: <b>5</b> для 5 млн или <b>0,5</b>, если это 500 тысяч",
         parse_mode="HTML"
     )
-
+ 
 @dp.message(Form.investment_source)
 async def get_investment_source(message: types.Message, state: FSMContext):
     await state.update_data(investment_source=message.text)
@@ -334,7 +334,7 @@ async def get_investment_source(message: types.Message, state: FSMContext):
         "📄 На каких условиях привлекли инвестиции?\n\n"
         "Например: доля 10%, конвертируемый займ, опцион и т.д."
     )
-
+ 
 @dp.message(Form.investment_terms)
 async def get_investment_terms(message: types.Message, state: FSMContext):
     await state.update_data(investment_terms=message.text)
@@ -344,9 +344,9 @@ async def get_investment_terms(message: types.Message, state: FSMContext):
         await show_summary(message, state)
     else:
         await ask_revenue(message, state)
-
+ 
 # ==================== ВЕТКА Б — В ПРОЦЕССЕ ====================
-
+ 
 @dp.callback_query(lambda c: c.data == "invest_process")
 async def process_invest_process(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -364,7 +364,7 @@ async def process_invest_process(callback: types.CallbackQuery, state: FSMContex
         "Если пока неизвестно — введи <b>0</b>",
         parse_mode="HTML"
     )
-
+ 
 @dp.message(Form.invest_process_amount)
 async def get_invest_process_amount(message: types.Message, state: FSMContext):
     amount = parse_amount(message.text)
@@ -386,26 +386,26 @@ async def get_invest_process_amount(message: types.Message, state: FSMContext):
             parse_mode="HTML",
             reply_markup=get_amount_confirm_keyboard("proc")
         )
-
+ 
 @dp.callback_query(lambda c: c.data == "amount_ok_proc")
 async def invest_process_amount_confirmed(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     data = await state.get_data()
     await state.update_data(investment_amount=data.get('invest_process_amount', 0))
     await ask_revenue(callback.message, state)
-
+ 
 @dp.callback_query(lambda c: c.data == "amount_fix_proc")
 async def invest_process_amount_fix(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     await state.set_state(Form.invest_process_amount)
     await callback.message.answer(
-        "Введи сумму снова. Допиши единицу, чтобы я точно понял:\n\n"
-        "Например: <b>5 млн</b>, <b>500 тыс</b>, <b>1,5 млрд</b>",
+        "Введи сумму снова — только цифру в млн:\n\n"
+        "Например: <b>5</b> для 5 млн или <b>0,5</b>, если это 500 тысяч",
         parse_mode="HTML"
     )
-
+ 
 # ==================== ВЕТКА В — НЕТ ИНВЕСТИЦИЙ ====================
-
+ 
 @dp.callback_query(lambda c: c.data == "invest_no")
 async def process_invest_no(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -417,9 +417,9 @@ async def process_invest_no(callback: types.CallbackQuery, state: FSMContext):
         invest_process_stage=""
     )
     await ask_revenue(callback.message, state)
-
+ 
 # ==================== ВЫРУЧКА ====================
-
+ 
 async def ask_revenue(message: types.Message, state: FSMContext):
     await state.set_state(Form.revenue)
     await message.answer(
@@ -429,7 +429,7 @@ async def ask_revenue(message: types.Message, state: FSMContext):
         "Если выручки не было — введи <b>0</b>",
         parse_mode="HTML"
     )
-
+ 
 @dp.message(Form.revenue)
 async def get_revenue(message: types.Message, state: FSMContext):
     amount = parse_amount(message.text)
@@ -450,7 +450,7 @@ async def get_revenue(message: types.Message, state: FSMContext):
             parse_mode="HTML",
             reply_markup=get_amount_confirm_keyboard("rev")
         )
-
+ 
 @dp.callback_query(lambda c: c.data == "amount_ok_rev")
 async def revenue_confirmed(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -460,19 +460,19 @@ async def revenue_confirmed(callback: types.CallbackQuery, state: FSMContext):
         await show_summary(callback.message, state)
     else:
         await ask_pilots(callback.message, state)
-
+ 
 @dp.callback_query(lambda c: c.data == "amount_fix_rev")
 async def revenue_fix(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     await state.set_state(Form.revenue)
     await callback.message.answer(
-        "Введи сумму снова. Допиши единицу, чтобы я точно понял:\n\n"
-        "Например: <b>1,5 млн</b>, <b>500 тыс</b>, <b>1,5 млрд</b>",
+        "Введи сумму снова — только цифру в млн:\n\n"
+        "Например: <b>5</b> для 5 млн или <b>0,5</b>, если это 500 тысяч",
         parse_mode="HTML"
     )
-
+ 
 # ==================== ПИЛОТЫ ====================
-
+ 
 async def ask_pilots(message: types.Message, state: FSMContext):
     await state.set_state(Form.pilot_status)
     await message.answer(
@@ -480,7 +480,7 @@ async def ask_pilots(message: types.Message, state: FSMContext):
         "Были ли новые пилоты с крупными компаниями за последний месяц?",
         reply_markup=get_pilot_keyboard()
     )
-
+ 
 @dp.callback_query(lambda c: c.data.startswith('pilot_'))
 async def process_pilot(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -502,7 +502,7 @@ async def process_pilot(callback: types.CallbackQuery, state: FSMContext):
             await show_summary(callback.message, state)
         else:
             await ask_other_news(callback.message, state)
-
+ 
 @dp.message(Form.pilot_company)
 async def get_pilot_company(message: types.Message, state: FSMContext):
     await state.update_data(pilot_company=message.text)
@@ -511,7 +511,7 @@ async def get_pilot_company(message: types.Message, state: FSMContext):
         "🎯 В чём суть пилота?\n\n"
         "Например: тестирование платформы на 100 сотрудниках"
     )
-
+ 
 @dp.message(Form.pilot_essence)
 async def get_pilot_essence(message: types.Message, state: FSMContext):
     await state.update_data(pilot_essence=message.text)
@@ -520,7 +520,7 @@ async def get_pilot_essence(message: types.Message, state: FSMContext):
         "📊 Какие результаты уже есть или ожидаются?\n\n"
         "Например: планируем увеличить продажи на 20%"
     )
-
+ 
 @dp.message(Form.pilot_results)
 async def get_pilot_results(message: types.Message, state: FSMContext):
     await state.update_data(pilot_results=message.text)
@@ -530,9 +530,9 @@ async def get_pilot_results(message: types.Message, state: FSMContext):
         await show_summary(message, state)
     else:
         await ask_other_news(message, state)
-
+ 
 # ==================== НОВОСТИ ====================
-
+ 
 async def ask_other_news(message: types.Message, state: FSMContext):
     await state.set_state(Form.other_news)
     await message.answer(
@@ -546,7 +546,7 @@ async def ask_other_news(message: types.Message, state: FSMContext):
         "Если новостей нет — нажми кнопку ниже 👇",
         reply_markup=get_news_keyboard()
     )
-
+ 
 @dp.callback_query(lambda c: c.data.startswith('news_'))
 async def process_news(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -558,7 +558,7 @@ async def process_news(callback: types.CallbackQuery, state: FSMContext):
         if data.get('edit_mode') == 'news':
             await state.update_data(edit_mode=None)
         await show_summary(callback.message, state)
-
+ 
 @dp.message(Form.other_news)
 async def get_other_news_text(message: types.Message, state: FSMContext):
     await state.update_data(other_news=message.text)
@@ -566,12 +566,12 @@ async def get_other_news_text(message: types.Message, state: FSMContext):
     if data.get('edit_mode') == 'news':
         await state.update_data(edit_mode=None)
     await show_summary(message, state)
-
+ 
 # ==================== САММАРИ ====================
-
+ 
 async def show_summary(message: types.Message, state: FSMContext):
     data = await state.get_data()
-
+ 
     inv_status = data.get('investment_status', '—')
     if "переговоры" in inv_status.lower() or "процессе" in inv_status.lower():
         inv_amount = data.get('investment_amount', 0)
@@ -588,7 +588,7 @@ async def show_summary(message: types.Message, state: FSMContext):
         )
     else:
         inv_block = inv_status
-
+ 
     pilot_text = data.get('pilot_status', '—')
     if data.get('pilot_company'):
         pilot_text += f"\n   Компания: {data['pilot_company']}"
@@ -596,7 +596,7 @@ async def show_summary(message: types.Message, state: FSMContext):
         pilot_text += f"\n   Суть: {data['pilot_essence']}"
     if data.get('pilot_results'):
         pilot_text += f"\n   Результаты: {data['pilot_results']}"
-
+ 
     text = (
         "📋 Проверь свои ответы:\n\n"
         f"📌 Стартап: {data.get('startup_name', '—')}\n\n"
@@ -606,10 +606,10 @@ async def show_summary(message: types.Message, state: FSMContext):
         f"📢 Новости: {data.get('other_news', '—')}\n\n"
         "Всё верно?"
     )
-
+ 
     await state.set_state(Form.summary)
     await message.answer(text, reply_markup=get_summary_keyboard())
-
+ 
 @dp.callback_query(lambda c: c.data.startswith('summary_'))
 async def process_summary(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -618,7 +618,7 @@ async def process_summary(callback: types.CallbackQuery, state: FSMContext):
     elif callback.data == "summary_edit":
         await state.set_state(Form.edit_menu)
         await callback.message.answer("Что хочешь отредактировать?", reply_markup=get_edit_keyboard())
-
+ 
 @dp.callback_query(lambda c: c.data.startswith('edit_'))
 async def process_edit(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -669,27 +669,27 @@ async def process_edit(callback: types.CallbackQuery, state: FSMContext):
     elif callback.data == "edit_restart":
         await state.clear()
         await cmd_start(callback.message, state)
-
+ 
 # ==================== ОТПРАВКА В SHEETS ====================
-
+ 
 async def send_to_sheets(message: types.Message, state: FSMContext):
     data = await state.get_data()
     user_id = message.from_user.id
-
+ 
     if not data.get('first_name'):
         data['first_name'] = message.from_user.first_name
     if not data.get('last_name'):
         data['last_name'] = message.from_user.last_name
     if not data.get('username'):
         data['username'] = message.from_user.username
-
+ 
     save_user_completion(
         user_id=user_id,
         username=data.get('username', ''),
         first_name=data.get('first_name', ''),
         last_name=data.get('last_name', '')
     )
-
+ 
     webhook_url = "https://flow.sokt.io/func/scri4EMJW50Q"
     payload = {
         "user_id": user_id,
@@ -710,7 +710,7 @@ async def send_to_sheets(message: types.Message, state: FSMContext):
         "pilot_results": data.get('pilot_results', ''),
         "other_news": data.get('other_news', '')
     }
-
+ 
     try:
         response = requests.post(webhook_url, json=payload)
         if response.status_code == 200:
@@ -726,11 +726,11 @@ async def send_to_sheets(message: types.Message, state: FSMContext):
     except Exception as e:
         await message.answer(f"❌ Ошибка соединения: {e}", reply_markup=ReplyKeyboardRemove())
         print(f"Ошибка отправки: {e}")
-
+ 
     await state.clear()
-
+ 
 # ==================== РАССЫЛКА ====================
-
+ 
 MONTHLY_REMINDER_TEXT = (
     "📅 Мы собираем дайджест каждый месяц!\n\n"
     "Расскажи, что нового случилось с твоим стартапом за этот месяц? "
@@ -738,14 +738,14 @@ MONTHLY_REMINDER_TEXT = (
     "Заполни короткую форму — займёт не больше 2 минут. "
     "Жми на кнопку, поехали! 👇"
 )
-
+ 
 async def do_broadcast():
     """Выполняет рассылку всем пользователям из базы"""
     users = get_all_users()
     photo_path = "Картинки для бота/приветствие.png"
     success = []
     failed = []
-
+ 
     for user in users:
         user_id, first_name, username = user
         username = username or "нет username"
@@ -761,7 +761,7 @@ async def do_broadcast():
         except Exception as e:
             failed.append(f"{first_name or 'Без имени'} (@{username}) — {str(e)[:50]}")
             print(f"❌ Ошибка пользователю {user_id}: {e}")
-
+ 
     report = f"📅 **Рассылка завершена!**\n\n📊 **Успешно:** {len(success)}\n❌ **Ошибок:** {len(failed)}\n\n"
     if success:
         report += "**✅ Получили:**\n"
@@ -775,12 +775,12 @@ async def do_broadcast():
             report += f"• {f}\n"
         if len(failed) > 20:
             report += f"\n... и ещё {len(failed) - 20} ошибок"
-
+ 
     for admin_id in ADMIN_IDS:
         await bot.send_message(admin_id, report[:4000], parse_mode="Markdown")
-
+ 
     print("Рассылка завершена!")
-
+ 
 async def schedule_auto_monthly():
     """Планировщик: 3-е число в 10:00 — сначала спрашивает у админа подтверждение"""
     while True:
@@ -795,7 +795,7 @@ async def schedule_auto_monthly():
         print(f"⏰ Следующая рассылка: {target.strftime('%Y-%m-%d %H:%M')} (через {wait_seconds / 3600:.1f} ч)")
         await asyncio.sleep(wait_seconds)
         await ask_admin_broadcast_confirm()
-
+ 
 async def ask_admin_broadcast_confirm():
     """Отправляет админам запрос на подтверждение рассылки"""
     users = get_all_users()
@@ -803,12 +803,12 @@ async def ask_admin_broadcast_confirm():
         for admin_id in ADMIN_IDS:
             await bot.send_message(admin_id, "📭 База пользователей пуста. Рассылка отменена.")
         return
-
+ 
     names = [f"{u[1] or 'Без имени'} (@{u[2] or 'нет username'})" for u in users]
     preview = "\n".join(f"• {n}" for n in names[:20])
     if len(names) > 20:
         preview += f"\n... и ещё {len(names) - 20} человек(а)"
-
+ 
     text = (
         f"📅 Запланирована ежемесячная рассылка!\n\n"
         f"Получат сообщение ({len(users)} чел.):\n{preview}\n\n"
@@ -816,20 +816,20 @@ async def ask_admin_broadcast_confirm():
     )
     for admin_id in ADMIN_IDS:
         await bot.send_message(admin_id, text, reply_markup=get_broadcast_confirm_keyboard())
-
+ 
 @dp.callback_query(lambda c: c.data == "broadcast_yes")
 async def broadcast_confirmed(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.answer("🔄 Запускаю рассылку...")
     await do_broadcast()
-
+ 
 @dp.callback_query(lambda c: c.data == "broadcast_no")
 async def broadcast_cancelled(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.answer("❌ Рассылка отменена.")
-
+ 
 # ==================== ФОНОВЫЙ ПИНГ ====================
-
+ 
 async def keep_alive():
     while True:
         await asyncio.sleep(600)
@@ -838,54 +838,54 @@ async def keep_alive():
             print("✅ Пинг выполнен")
         except Exception as e:
             print(f"❌ Ошибка пинга: {e}")
-
+ 
 # ==================== ВЕБ-СЕРВЕР ====================
-
+ 
 app = Flask(__name__)
-
+ 
 @app.route('/')
 def health():
     return "Bot is running!", 200
-
+ 
 @app.route('/ping')
 def ping():
     return "OK", 200
-
+ 
 @app.route('/keepalive')
 def keepalive():
     return "OK", 200
-
+ 
 def run_web_server():
     app.run(host='0.0.0.0', port=8000)
-
+ 
 # ==================== ЗАПУСК ====================
-
+ 
 async def main():
     try:
         await bot.delete_webhook(drop_pending_updates=True)
         print("Webhook удалён!")
     except Exception as e:
         print(f"Ошибка удаления вебхука: {e}")
-
+ 
     web_thread = threading.Thread(target=run_web_server)
     web_thread.daemon = True
     web_thread.start()
     print("Веб-сервер запущен на порту 8000")
-
+ 
     asyncio.create_task(keep_alive())
     print("✅ Пинг запущен")
-
+ 
     asyncio.create_task(schedule_auto_monthly())
     print("✅ Планировщик рассылки запущен (3-е число в 10:00)")
-
+ 
     asyncio.create_task(auto_backup())
     print("✅ Автобэкап запущен (каждые 3 дня)")
-
+ 
     print("Бот запущен!")
     await dp.start_polling(bot)
-
+ 
 # ==================== АДМИНСКИЕ КОМАНДЫ ====================
-
+ 
 @dp.message(Command("db"))
 async def show_db(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
@@ -908,7 +908,7 @@ async def show_db(message: types.Message, state: FSMContext):
     if len(text) > 4000:
         text = text[:4000] + "\n\n... (обрезано)"
     await message.answer(text, parse_mode="Markdown")
-
+ 
 @dp.message(Command("send_now"))
 async def send_now(message: types.Message, state: FSMContext):
     """Сразу показывает список и спрашивает подтверждение — как плановая рассылка"""
@@ -916,7 +916,7 @@ async def send_now(message: types.Message, state: FSMContext):
         await message.answer("⛔ Нет прав")
         return
     await ask_admin_broadcast_confirm()
-
+ 
 @dp.message(Command("backup"))
 async def backup_db(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
@@ -930,7 +930,7 @@ async def backup_db(message: types.Message, state: FSMContext):
             )
     else:
         await message.answer("❌ Файл базы не найден")
-
+ 
 @dp.message(Command("restore"))
 async def restore_db(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
@@ -951,7 +951,7 @@ async def restore_db(message: types.Message, state: FSMContext):
         await message.answer("✅ База восстановлена!")
     except Exception as e:
         await message.answer(f"❌ Ошибка восстановления: {e}")
-
+ 
 @dp.message(Command("check_reminder"))
 async def check_reminder(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
@@ -971,6 +971,6 @@ async def check_reminder(message: types.Message, state: FSMContext):
         status = "никогда не получал" if last_sent is None else last_sent[:16]
         text += f"• {name}: последняя рассылка — {status}\n"
     await message.answer(text[:4000], parse_mode="Markdown")
-
+ 
 if __name__ == "__main__":
     asyncio.run(main())
