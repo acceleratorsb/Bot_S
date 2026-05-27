@@ -284,7 +284,8 @@ async def process_invest_yes(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.answer(
         "💰 Отлично! 🎉\n\n"
         "Какую сумму привлекли за последний месяц?\n\n"
-        "Можно писать как удобно: <b>5 млн</b>, <b>500 тыс</b>, <b>5 000 000</b> или просто <b>5</b>",
+        "Напиши только цифру в млн.\n"
+        "Например: <b>5</b> для 5 млн или <b>0,5</b>, если это 500 тысяч",
         parse_mode="HTML"
     )
  
@@ -360,7 +361,8 @@ async def process_invest_process(callback: types.CallbackQuery, state: FSMContex
     await callback.message.answer(
         "🤝 Понял, переговоры в процессе!\n\n"
         "Какой примерный объём раунда планируете?\n\n"
-        "Можно писать как удобно: <b>5 млн</b>, <b>500 тыс</b>, <b>5 000 000</b>\n"
+        "Напиши только цифру в млн.\n"
+        "Например: <b>5</b> для 5 млн или <b>0,5</b>, если это 500 тысяч\n"
         "Если пока неизвестно — введи <b>0</b>",
         parse_mode="HTML"
     )
@@ -425,7 +427,8 @@ async def ask_revenue(message: types.Message, state: FSMContext):
     await message.answer(
         "💰 Выручка\n\n"
         "Какая выручка у стартапа была за последний месяц?\n\n"
-        "Можно писать как удобно: <b>1,5 млн</b>, <b>500 тыс</b>, <b>1 500 000</b>\n"
+        "Напиши только цифру в млн.\n"
+        "Например: <b>5</b> для 5 млн или <b>0,5</b>, если это 500 тысяч\n"
         "Если выручки не было — введи <b>0</b>",
         parse_mode="HTML"
     )
