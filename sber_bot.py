@@ -974,6 +974,12 @@ async def check_reminder(message: types.Message, state: FSMContext):
         status = "никогда не получал" if last_sent is None else last_sent[:16]
         text += f"• {name}: последняя рассылка — {status}\n"
     await message.answer(text[:4000], parse_mode="Markdown")
-
+@dp.message(Command("check_state"))
+async def check_state(message: types.Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Нет прав")
+        return
+    data = await state.get_data()
+    await message.answer(f"📋 Содержимое state:\n\n{data}")
 if __name__ == "__main__":
     asyncio.run(main())
