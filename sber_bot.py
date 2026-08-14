@@ -16,7 +16,9 @@ from aiogram.types import FSInputFile
 from flask import Flask
 import threading
 
-API_TOKEN = '8409242586:AAGeTLoHT2pbOK1n1IiaTNTb8Pvj1YT3_WU'
+# Токен можно задать через переменную окружения BOT_TOKEN — тогда его не нужно
+# хранить в коде. Если переменная не задана, используется значение по умолчанию.
+API_TOKEN = os.environ.get('BOT_TOKEN', '8409242586:AAGeTLoHT2pbOK1n1IiaTNTb8Pvj1YT3_WU')
 
 storage = MemoryStorage()
 bot = Bot(token=API_TOKEN)
@@ -38,7 +40,18 @@ def init_db():
                   last_name TEXT,
                   first_completed TEXT,
                   last_completed TEXT,
-                  last_reminder_sent TEXT)''')
+                  last_reminder_sent TEXT,
+                  last_submitted TEXT,
+                  opted_out INTEGER DEFAULT 0)''')
+
+    # Миграция для уже существующей базы: если бот раньше работал без этих
+    # колонок, добавляем их. Если они уже есть — просто ловим ошибку и идём дальше.
+    for column_def in ["last_submitted TEXT", "opted_out INTEGER DEFAULT 0"]:
+        try:
+            c.execute(f'ALTER TABLE users ADD COLUMN {column_def}')
+        except sqlite3.OperationalError:
+            pass  # колонка уже существует
+
     conn.commit()
     conn.close()
 
@@ -60,13 +73,71 @@ def save_user_completion(user_id, username, first_name, last_name):
     conn.close()
     print(f"✅ Пользователь {user_id} сохранён в базе")
 
-def get_all_users():
+def mark_user_submitted(user_id):
+    """Отмечает, что пользователь ДОШЁЛ до конца и реально отправил трекшен
+    (в отличие от save_user_completion, которая срабатывает уже при старте заполнения)."""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    c.execute("SELECT user_id, first_name, username FROM users")
+    now = datetime.now(timezone(timedelta(hours=3))).isoformat()
+    c.execute('UPDATE users SET last_submitted=? WHERE user_id=?', (now, user_id))
+    conn.commit()
+    conn.close()
+
+def get_all_users(exclude_opted_out=True):
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    if exclude_opted_out:
+        c.execute("SELECT user_id, first_name, username FROM users WHERE opted_out=0")
+    else:
+        c.execute("SELECT user_id, first_name, username FROM users")
     users = c.fetchall()
     conn.close()
     return users
+
+def get_month_start_iso():
+    """ISO-дата 1-го числа текущего месяца, 00:00, в московском времени."""
+    now = datetime.now(timezone(timedelta(hours=3)))
+    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return start.isoformat()
+
+def get_users_submitted_this_month():
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    month_start = get_month_start_iso()
+    c.execute('''SELECT user_id, first_name, username, last_submitted FROM users
+                 WHERE last_submitted IS NOT NULL AND last_submitted >= ?
+                 ORDER BY last_submitted''', (month_start,))
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def get_users_not_submitted_this_month():
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    month_start = get_month_start_iso()
+    c.execute('''SELECT user_id, first_name, username FROM users
+                 WHERE opted_out=0 AND (last_submitted IS NULL OR last_submitted < ?)
+                 ORDER BY first_name''', (month_start,))
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def get_user_by_username(username):
+    username_clean = username.strip().lstrip('@')
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('''SELECT user_id, first_name, username, opted_out FROM users
+                 WHERE LOWER(username) = LOWER(?)''', (username_clean,))
+    row = c.fetchone()
+    conn.close()
+    return row
+
+def set_user_opted_out(user_id, value=1):
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('UPDATE users SET opted_out=? WHERE user_id=?', (value, user_id))
+    conn.commit()
+    conn.close()
 
 def update_last_reminder_sent(user_id):
     conn = sqlite3.connect('users.db')
@@ -196,6 +267,35 @@ def get_broadcast_confirm_keyboard():
     builder.adjust(1)
     return builder.as_markup()
 
+def get_admin_menu_keyboard():
+    """Главное меню админских действий — /admin"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📊 Кто прошёл в этом месяце", callback_data="admin_submitted_month")
+    builder.button(text="📋 Кто не прошёл", callback_data="admin_not_submitted_month")
+    builder.button(text="🚫 Убрать пользователя из рассылки", callback_data="admin_remove_user_start")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def get_reminder_button_keyboard():
+    """Кнопка в напоминании — запускает форму так же, как обычный старт"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📝 Заполнить анкету", callback_data="reminder_start")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def get_send_reminders_keyboard():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📨 Отправить напоминание всем", callback_data="admin_send_reminders")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def get_confirm_remove_keyboard():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Да, убрать", callback_data="admin_confirm_remove_yes")
+    builder.button(text="❌ Отмена", callback_data="admin_confirm_remove_no")
+    builder.adjust(1)
+    return builder.as_markup()
+
 # ==================== КЛАСС СОСТОЯНИЙ ====================
 
 class Form(StatesGroup):
@@ -216,6 +316,9 @@ class Form(StatesGroup):
     other_news = State()
     summary = State()
     edit_menu = State()
+
+class AdminStates(StatesGroup):
+    waiting_username_to_remove = State()
 
 # ==================== СТАРТ ====================
 
@@ -250,16 +353,27 @@ async def cmd_start(message: types.Message, state: FSMContext):
     else:
         await message.answer(welcome_text, reply_markup=start_keyboard)
 
-@dp.message(lambda message: message.text == "🚀 Начать заполнение")
-async def handle_start_button(message: types.Message, state: FSMContext):
+async def begin_form(target, state: FSMContext, user: types.User):
+    """Общая точка входа в форму — используется и обычной кнопкой,
+    и кнопкой «Заполнить анкету» из напоминания.
+    target — любой объект с методом .answer (Message или CallbackQuery.message)."""
     save_user_completion(
-        user_id=message.from_user.id,
-        username=message.from_user.username or '',
-        first_name=message.from_user.first_name or '',
-        last_name=message.from_user.last_name or ''
+        user_id=user.id,
+        username=user.username or '',
+        first_name=user.first_name or '',
+        last_name=user.last_name or ''
     )
     await state.set_state(Form.startup_name)
-    await message.answer("Укажи название стартапа", reply_markup=ReplyKeyboardRemove())
+    await target.answer("Укажи название стартапа", reply_markup=ReplyKeyboardRemove())
+
+@dp.message(lambda message: message.text == "🚀 Начать заполнение")
+async def handle_start_button(message: types.Message, state: FSMContext):
+    await begin_form(message, state, message.from_user)
+
+@dp.callback_query(lambda c: c.data == "reminder_start")
+async def process_reminder_start(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await begin_form(callback.message, state, callback.from_user)
 
 @dp.message(Form.startup_name)
 async def get_startup_name(message: types.Message, state: FSMContext):
@@ -717,6 +831,7 @@ async def send_to_sheets(message: types.Message, state: FSMContext):
     try:
         response = requests.post(webhook_url, json=payload)
         if response.status_code == 200:
+            mark_user_submitted(user_id)
             await message.answer(
                 "✅ Готово! Спасибо за информацию, мы получили все данные!",
                 reply_markup=ReplyKeyboardRemove()
@@ -742,8 +857,14 @@ MONTHLY_REMINDER_TEXT = (
     "Жми на кнопку, поехали! 👇"
 )
 
+TRACKING_REMINDER_TEXT = (
+    "Привет!\n"
+    "Ты еще не заполнил анкету в этом месяце?\n"
+    "Самое время это сделать 🔥"
+)
+
 async def do_broadcast():
-    """Выполняет рассылку всем пользователям из базы"""
+    """Выполняет рассылку всем пользователям из базы (кроме тех, кто убран из рассылки)"""
     users = get_all_users()
     photo_path = "Картинки для бота/приветствие.png"
     success = []
@@ -830,6 +951,174 @@ async def broadcast_confirmed(callback: types.CallbackQuery, state: FSMContext):
 async def broadcast_cancelled(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.answer("❌ Рассылка отменена.")
+
+# ==================== РАЗОВЫЙ ПЕРЕНОС ИСТОРИИ ЗА ЭТОТ МЕСЯЦ ====================
+
+@dp.message(Command("backfill_month"))
+async def backfill_month(message: types.Message, state: FSMContext):
+    """Разовая команда: после обновления бота колонка last_submitted у всех пустая,
+    даже если человек уже сдал трекшен в этом месяце раньше. Эта команда переносит
+    last_completed -> last_submitted для всех, чья дата попадает в текущий месяц.
+    Погрешность: если человек в этом месяце начал заполнять, но бросил на середине,
+    он тоже попадёт в список «прошедших» — после запуска стоит перепроверить список
+    через /admin -> «Кто прошёл в этом месяце» глазами."""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Нет прав")
+        return
+
+    month_start = get_month_start_iso()
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('''UPDATE users SET last_submitted = last_completed
+                 WHERE last_completed >= ? AND (last_submitted IS NULL OR last_submitted < ?)''',
+              (month_start, month_start))
+    updated = c.rowcount
+    conn.commit()
+    conn.close()
+
+    await message.answer(
+        f"✅ Перенёс историю за этот месяц для {updated} чел.\n\n"
+        "Проверь список через /admin → «Кто прошёл в этом месяце» — "
+        "если увидишь там того, кто по факту не дошёл до конца (просто начинал и бросил), "
+        "напиши мне, поправим вручную."
+    )
+
+# ==================== АДМИН-МЕНЮ: СТАТИСТИКА ТРЕКШЕНА ====================
+
+@dp.message(Command("admin"))
+async def cmd_admin(message: types.Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Эта команда только для администраторов")
+        return
+    await message.answer("🔧 Админ-меню:", reply_markup=get_admin_menu_keyboard())
+
+@dp.callback_query(lambda c: c.data == "admin_submitted_month")
+async def admin_submitted_month(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    if callback.from_user.id not in ADMIN_IDS:
+        return
+    rows = get_users_submitted_this_month()
+    if not rows:
+        await callback.message.answer("📭 В этом месяце ещё никто не прошёл трекшен.")
+        return
+    lines = []
+    for user_id, first_name, username, last_submitted in rows:
+        uname = f"@{username}" if username else "нет username"
+        date_str = last_submitted[:16].replace('T', ' ') if last_submitted else '—'
+        lines.append(f"• {first_name or 'без имени'} ({uname}) — {date_str}")
+    text = f"📊 Прошли трекшен в этом месяце: {len(rows)}\n\n" + "\n".join(lines)
+    if len(text) > 4000:
+        text = text[:4000] + "\n\n... (обрезано)"
+    await callback.message.answer(text)
+
+@dp.callback_query(lambda c: c.data == "admin_not_submitted_month")
+async def admin_not_submitted_month(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    if callback.from_user.id not in ADMIN_IDS:
+        return
+    rows = get_users_not_submitted_this_month()
+    if not rows:
+        await callback.message.answer("🎉 Все прошли трекшен в этом месяце!")
+        return
+    lines = []
+    for user_id, first_name, username in rows:
+        uname = f"@{username}" if username else "нет username"
+        lines.append(f"• {first_name or 'без имени'} ({uname})")
+    text = f"📋 Не прошли трекшен в этом месяце: {len(rows)}\n\n" + "\n".join(lines)
+    if len(text) > 4000:
+        text = text[:4000] + "\n\n... (обрезано)"
+    await callback.message.answer(text, reply_markup=get_send_reminders_keyboard())
+
+@dp.callback_query(lambda c: c.data == "admin_send_reminders")
+async def admin_send_reminders(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    if callback.from_user.id not in ADMIN_IDS:
+        return
+    rows = get_users_not_submitted_this_month()
+    if not rows:
+        await callback.message.answer("🎉 Отправлять некому — все уже прошли трекшен.")
+        return
+
+    success, failed = [], []
+    for user_id, first_name, username in rows:
+        uname = username or "нет username"
+        try:
+            await bot.send_message(
+                user_id,
+                TRACKING_REMINDER_TEXT,
+                reply_markup=get_reminder_button_keyboard()
+            )
+            update_last_reminder_sent(user_id)
+            success.append(f"{first_name or 'Без имени'} (@{uname})")
+            await asyncio.sleep(0.05)
+        except Exception as e:
+            failed.append(f"{first_name or 'Без имени'} (@{uname}) — {str(e)[:50]}")
+            print(f"❌ Ошибка напоминания пользователю {user_id}: {e}")
+
+    report = f"📨 Напоминания отправлены!\n\n✅ Успешно: {len(success)}\n❌ Ошибок: {len(failed)}"
+    if failed:
+        report += "\n\n❌ Не получили:\n" + "\n".join(f"• {f}" for f in failed[:20])
+    await callback.message.answer(report[:4000])
+
+# ==================== АДМИН-МЕНЮ: УБРАТЬ ИЗ РАССЫЛКИ ====================
+
+@dp.callback_query(lambda c: c.data == "admin_remove_user_start")
+async def admin_remove_user_start(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    if callback.from_user.id not in ADMIN_IDS:
+        return
+    await state.set_state(AdminStates.waiting_username_to_remove)
+    await callback.message.answer(
+        "Введи username (ник) пользователя, которого нужно убрать из рассылок "
+        "(можно с @ или без):"
+    )
+
+@dp.message(AdminStates.waiting_username_to_remove)
+async def admin_remove_user_lookup(message: types.Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    row = get_user_by_username(message.text)
+    if not row:
+        await message.answer(
+            "❌ Пользователь с таким ником не найден в базе.\n"
+            "Попробуй ещё раз или отправь /admin, чтобы выйти в меню."
+        )
+        return
+
+    user_id, first_name, username, opted_out = row
+    if opted_out:
+        await state.clear()
+        await message.answer(f"ℹ️ {first_name or 'Без имени'} (@{username}) уже не получает рассылки.")
+        return
+
+    await state.update_data(remove_user_id=user_id, remove_user_name=first_name, remove_username=username)
+    await state.set_state(None)
+    await message.answer(
+        f"Убираем из рассылки: {first_name or 'Без имени'} (@{username}) — верно?",
+        reply_markup=get_confirm_remove_keyboard()
+    )
+
+@dp.callback_query(lambda c: c.data == "admin_confirm_remove_yes")
+async def admin_confirm_remove_yes(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    if callback.from_user.id not in ADMIN_IDS:
+        return
+    data = await state.get_data()
+    user_id = data.get('remove_user_id')
+    name = data.get('remove_user_name')
+    username = data.get('remove_username')
+    if not user_id:
+        await callback.message.answer("❌ Не нашёл, кого убирать — начни заново через /admin.")
+        return
+    set_user_opted_out(user_id, 1)
+    await state.clear()
+    await callback.message.answer(f"✅ {name or 'Без имени'} (@{username}) больше не будет получать рассылки.")
+
+@dp.callback_query(lambda c: c.data == "admin_confirm_remove_no")
+async def admin_confirm_remove_no(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.clear()
+    await callback.message.answer("❌ Отменено, никого не убрали.")
 
 # ==================== ФОНОВЫЙ ПИНГ ====================
 
@@ -974,6 +1263,7 @@ async def check_reminder(message: types.Message, state: FSMContext):
         status = "никогда не получал" if last_sent is None else last_sent[:16]
         text += f"• {name}: последняя рассылка — {status}\n"
     await message.answer(text[:4000], parse_mode="Markdown")
+
 @dp.message(Command("check_state"))
 async def check_state(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
@@ -981,5 +1271,6 @@ async def check_state(message: types.Message, state: FSMContext):
         return
     data = await state.get_data()
     await message.answer(f"📋 Содержимое state:\n\n{data}")
+
 if __name__ == "__main__":
     asyncio.run(main())
