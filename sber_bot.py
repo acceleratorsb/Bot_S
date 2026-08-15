@@ -4,7 +4,7 @@ import os
 import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -985,11 +985,23 @@ async def backfill_month(message: types.Message, state: FSMContext):
 
 # ==================== АДМИН-МЕНЮ: СТАТИСТИКА ТРЕКШЕНА ====================
 
+@dp.message(Command("cancel"))
+async def cmd_cancel(message: types.Message, state: FSMContext):
+    """Сбрасывает любое зависшее состояние (например, если бот застрял
+    в ожидании ника после недоведённого до конца удаления пользователя)."""
+    current = await state.get_state()
+    if current is None:
+        await message.answer("Сейчас ничего не ожидаю, отменять нечего.")
+        return
+    await state.clear()
+    await message.answer("✅ Отменено, состояние сброшено.")
+
 @dp.message(Command("admin"))
 async def cmd_admin(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Эта команда только для администраторов")
         return
+    await state.clear()  # на случай, если предыдущий флоу (например, удаление ника) не был доведён до конца
     await message.answer("🔧 Админ-меню:", reply_markup=get_admin_menu_keyboard())
 
 @dp.callback_query(lambda c: c.data == "admin_submitted_month")
@@ -1073,7 +1085,7 @@ async def admin_remove_user_start(callback: types.CallbackQuery, state: FSMConte
         "(можно с @ или без):"
     )
 
-@dp.message(AdminStates.waiting_username_to_remove)
+@dp.message(AdminStates.waiting_username_to_remove, F.text, ~F.text.startswith('/'))
 async def admin_remove_user_lookup(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         return
