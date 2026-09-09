@@ -1219,7 +1219,11 @@ async def send_now(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Нет прав")
         return
-    await ask_admin_broadcast_confirm()
+    try:
+        await ask_admin_broadcast_confirm()
+    except Exception as e:
+        print(f"❌ Ошибка в /send_now: {e}")
+        await message.answer(f"❌ Не получилось подготовить рассылку: {e}")
 
 @dp.message(Command("backup"))
 async def backup_db(message: types.Message, state: FSMContext):
@@ -1281,8 +1285,12 @@ async def check_state(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Нет прав")
         return
+    current_state = await state.get_state()
     data = await state.get_data()
-    await message.answer(f"📋 Содержимое state:\n\n{data}")
+    await message.answer(
+        f"📋 Текущее состояние: {current_state or 'нет (свободен)'}\n\n"
+        f"Данные:\n{data}"
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
