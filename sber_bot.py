@@ -1213,6 +1213,19 @@ async def show_db(message: types.Message, state: FSMContext):
         text = text[:4000] + "\n\n... (обрезано)"
     await message.answer(text, parse_mode="Markdown")
 
+@dp.message(Command("fix_db_schema"))
+async def fix_db_schema(message: types.Message, state: FSMContext):
+    """Разовая команда: досоздаёт недостающие колонки (opted_out, last_submitted)
+    в текущей users.db, если она осталась от старой версии схемы."""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔ Нет прав")
+        return
+    try:
+        init_db()
+        await message.answer("✅ Схема базы проверена и обновлена (недостающие колонки добавлены).")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка при обновлении схемы: {e}")
+
 @dp.message(Command("send_now"))
 async def send_now(message: types.Message, state: FSMContext):
     """Сразу показывает список и спрашивает подтверждение — как плановая рассылка"""
@@ -1256,6 +1269,7 @@ async def restore_db(message: types.Message, state: FSMContext):
         file_data = await bot.download_file(file.file_path)
         with open('users.db', 'wb') as f:
             f.write(file_data.read())
+        init_db()  # переприменяем миграцию — вдруг восстановили старый бэкап без новых колонок
         await message.answer("✅ База восстановлена!")
     except Exception as e:
         await message.answer(f"❌ Ошибка восстановления: {e}")
