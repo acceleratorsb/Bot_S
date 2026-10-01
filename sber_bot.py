@@ -44,13 +44,11 @@ def init_db():
                   last_submitted TEXT,
                   opted_out INTEGER DEFAULT 0)''')
 
-    # Миграция для уже существующей базы: если бот раньше работал без этих
-    # колонок, добавляем их. Если они уже есть — просто ловим ошибку и идём дальше.
     for column_def in ["last_submitted TEXT", "opted_out INTEGER DEFAULT 0"]:
         try:
             c.execute(f'ALTER TABLE users ADD COLUMN {column_def}')
         except sqlite3.OperationalError:
-            pass  # колонка уже существует
+            pass
 
     conn.commit()
     conn.close()
@@ -74,8 +72,6 @@ def save_user_completion(user_id, username, first_name, last_name):
     print(f"✅ Пользователь {user_id} сохранён в базе")
 
 def mark_user_submitted(user_id):
-    """Отмечает, что пользователь ДОШЁЛ до конца и реально отправил трекшен
-    (в отличие от save_user_completion, которая срабатывает уже при старте заполнения)."""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     now = datetime.now(timezone(timedelta(hours=3))).isoformat()
@@ -95,7 +91,6 @@ def get_all_users(exclude_opted_out=True):
     return users
 
 def get_month_start_iso():
-    """ISO-дата 1-го числа текущего месяца, 00:00, в московском времени."""
     now = datetime.now(timezone(timedelta(hours=3)))
     start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     return start.isoformat()
@@ -147,12 +142,9 @@ def update_last_reminder_sent(user_id):
     conn.commit()
     conn.close()
 
-# ==================== АВТОБЭКАП ====================
-
 async def auto_backup():
-    """Каждые 3 дня отправляет бэкап базы всем админам"""
     while True:
-        await asyncio.sleep(3 * 24 * 3600)  # 3 дня
+        await asyncio.sleep(3 * 24 * 3600)
         if os.path.exists('users.db'):
             now_str = datetime.now(timezone(timedelta(hours=3))).strftime('%Y-%m-%d')
             for admin_id in ADMIN_IDS:
@@ -166,8 +158,6 @@ async def auto_backup():
                 except Exception as e:
                     print(f"❌ Ошибка автобэкапа для {admin_id}: {e}")
         print("✅ Автобэкап выполнен")
-
-# ==================== ПАРСЕР СУММЫ ====================
 
 def parse_amount(text: str):
     text = text.strip().lower()
@@ -204,8 +194,6 @@ def format_amount(amount_mln: float) -> str:
             return f"{int(amount_mln)} млн ₽"
         else:
             return f"{amount_mln:g} млн ₽"
-
-# ==================== КЛАВИАТУРЫ ====================
 
 start_keyboard = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="🚀 Начать заполнение")]],
@@ -260,7 +248,6 @@ def get_summary_keyboard():
     return builder.as_markup()
 
 def get_broadcast_confirm_keyboard():
-    """Кнопки подтверждения рассылки для админа"""
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Да, запустить рассылку", callback_data="broadcast_yes")
     builder.button(text="❌ Нет, отменить", callback_data="broadcast_no")
@@ -268,7 +255,6 @@ def get_broadcast_confirm_keyboard():
     return builder.as_markup()
 
 def get_admin_menu_keyboard():
-    """Главное меню админских действий — /admin"""
     builder = InlineKeyboardBuilder()
     builder.button(text="📊 Кто прошёл в этом месяце", callback_data="admin_submitted_month")
     builder.button(text="📋 Кто не прошёл", callback_data="admin_not_submitted_month")
@@ -277,7 +263,6 @@ def get_admin_menu_keyboard():
     return builder.as_markup()
 
 def get_reminder_button_keyboard():
-    """Кнопка в напоминании — запускает форму так же, как обычный старт"""
     builder = InlineKeyboardBuilder()
     builder.button(text="📝 Заполнить анкету", callback_data="reminder_start")
     builder.adjust(1)
@@ -295,8 +280,6 @@ def get_confirm_remove_keyboard():
     builder.button(text="❌ Отмена", callback_data="admin_confirm_remove_no")
     builder.adjust(1)
     return builder.as_markup()
-
-# ==================== КЛАСС СОСТОЯНИЙ ====================
 
 class Form(StatesGroup):
     startup_name = State()
@@ -320,21 +303,22 @@ class Form(StatesGroup):
 class AdminStates(StatesGroup):
     waiting_username_to_remove = State()
 
-# ==================== СТАРТ ====================
-
 @dp.message(Command("start"))
-async def cmd_start(message: types.Message, state: FSMContext):
+async def cmd_start(message: types.Message, state: FSMContext, user: types.User = None):
+    user = user or message.from_user  # для обычного /start это message.from_user;
+                                       # для вызова из callback (кнопка «Заполнить всё заново»)
+                                       # передаётся явно настоящий отправитель, а не бот
     await state.clear()
     await state.update_data(
-        user_id=message.from_user.id,
-        username=message.from_user.username,
-        first_name=message.from_user.first_name,
-        last_name=message.from_user.last_name
+        user_id=user.id,
+        username=user.username,
+        first_name=user.first_name,
+        last_name=user.last_name
     )
 
     photo_path = "Картинки для бота/приветствие.png"
     welcome_text = (
-        f"Привет, {message.from_user.first_name}! 👋\n\n"
+        f"Привет, {user.first_name}! 👋\n\n"
         "Это акселераторы Сбера 🚀\n\n"
         "Хотим узнать, как дела у твоего стартапа за этот месяц: "
         "какие успехи, пилоты, инвестиции?\n\n"
@@ -354,9 +338,6 @@ async def cmd_start(message: types.Message, state: FSMContext):
         await message.answer(welcome_text, reply_markup=start_keyboard)
 
 async def begin_form(target, state: FSMContext, user: types.User):
-    """Общая точка входа в форму — используется и обычной кнопкой,
-    и кнопкой «Заполнить анкету» из напоминания.
-    target — любой объект с методом .answer (Message или CallbackQuery.message)."""
     save_user_completion(
         user_id=user.id,
         username=user.username or '',
@@ -387,8 +368,6 @@ async def get_startup_name(message: types.Message, state: FSMContext):
         "Выбери свой вариант 👇",
         reply_markup=get_invest_keyboard()
     )
-
-# ==================== ВЕТКА А — ПРИВЛЕКЛИ ====================
 
 @dp.callback_query(lambda c: c.data == "invest_yes")
 async def process_invest_yes(callback: types.CallbackQuery, state: FSMContext):
@@ -460,8 +439,6 @@ async def get_investment_terms(message: types.Message, state: FSMContext):
     else:
         await ask_revenue(message, state)
 
-# ==================== ВЕТКА Б — В ПРОЦЕССЕ ====================
-
 @dp.callback_query(lambda c: c.data == "invest_process")
 async def process_invest_process(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -520,8 +497,6 @@ async def invest_process_amount_fix(callback: types.CallbackQuery, state: FSMCon
         parse_mode="HTML"
     )
 
-# ==================== ВЕТКА В — НЕТ ИНВЕСТИЦИЙ ====================
-
 @dp.callback_query(lambda c: c.data == "invest_no")
 async def process_invest_no(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -533,8 +508,6 @@ async def process_invest_no(callback: types.CallbackQuery, state: FSMContext):
         invest_process_stage=""
     )
     await ask_revenue(callback.message, state)
-
-# ==================== ВЫРУЧКА ====================
 
 async def ask_revenue(message: types.Message, state: FSMContext):
     await state.set_state(Form.revenue)
@@ -587,8 +560,6 @@ async def revenue_fix(callback: types.CallbackQuery, state: FSMContext):
         "Например: <b>5</b> для 5 млн или <b>0,5</b>, если это 500 тысяч",
         parse_mode="HTML"
     )
-
-# ==================== ПИЛОТЫ ====================
 
 async def ask_pilots(message: types.Message, state: FSMContext):
     await state.set_state(Form.pilot_status)
@@ -648,8 +619,6 @@ async def get_pilot_results(message: types.Message, state: FSMContext):
     else:
         await ask_other_news(message, state)
 
-# ==================== НОВОСТИ ====================
-
 async def ask_other_news(message: types.Message, state: FSMContext):
     await state.set_state(Form.other_news)
     await message.answer(
@@ -683,8 +652,6 @@ async def get_other_news_text(message: types.Message, state: FSMContext):
     if data.get('edit_mode') == 'news':
         await state.update_data(edit_mode=None)
     await show_summary(message, state)
-
-# ==================== САММАРИ ====================
 
 async def show_summary(message: types.Message, state: FSMContext):
     data = await state.get_data()
@@ -731,7 +698,7 @@ async def show_summary(message: types.Message, state: FSMContext):
 async def process_summary(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     if callback.data == "summary_confirm":
-        await send_to_sheets(callback.message, state)
+        await send_to_sheets(callback.message, state, callback.from_user)
     elif callback.data == "summary_edit":
         await state.set_state(Form.edit_menu)
         await callback.message.answer("Что хочешь отредактировать?", reply_markup=get_edit_keyboard())
@@ -785,20 +752,18 @@ async def process_edit(callback: types.CallbackQuery, state: FSMContext):
         )
     elif callback.data == "edit_restart":
         await state.clear()
-        await cmd_start(callback.message, state)
+        await cmd_start(callback.message, state, callback.from_user)
 
-# ==================== ОТПРАВКА В SHEETS ====================
-
-async def send_to_sheets(message: types.Message, state: FSMContext):
+async def send_to_sheets(message: types.Message, state: FSMContext, user: types.User):
     data = await state.get_data()
-    user_id = message.from_user.id
+    user_id = user.id
 
     if not data.get('first_name'):
-        data['first_name'] = message.from_user.first_name
+        data['first_name'] = user.first_name
     if not data.get('last_name'):
-        data['last_name'] = message.from_user.last_name
+        data['last_name'] = user.last_name
     if not data.get('username'):
-        data['username'] = message.from_user.username
+        data['username'] = user.username
 
     save_user_completion(
         user_id=user_id,
@@ -847,8 +812,6 @@ async def send_to_sheets(message: types.Message, state: FSMContext):
 
     await state.clear()
 
-# ==================== РАССЫЛКА ====================
-
 MONTHLY_REMINDER_TEXT = (
     "📅 Мы собираем дайджест каждый месяц!\n\n"
     "Расскажи, что нового случилось с твоим стартапом за этот месяц? "
@@ -864,7 +827,6 @@ TRACKING_REMINDER_TEXT = (
 )
 
 async def do_broadcast():
-    """Выполняет рассылку всем пользователям из базы (кроме тех, кто убран из рассылки)"""
     users = get_all_users()
     photo_path = "Картинки для бота/приветствие.png"
     success = []
@@ -906,7 +868,6 @@ async def do_broadcast():
     print("Рассылка завершена!")
 
 async def schedule_auto_monthly():
-    """Планировщик: 27-е число в 12:00 — сначала спрашивает у админа подтверждение"""
     while True:
         now = datetime.now(timezone(timedelta(hours=3)))
         target = now.replace(day=27, hour=12, minute=0, second=0, microsecond=0)
@@ -921,7 +882,6 @@ async def schedule_auto_monthly():
         await ask_admin_broadcast_confirm()
 
 async def ask_admin_broadcast_confirm():
-    """Отправляет админам запрос на подтверждение рассылки"""
     users = get_all_users()
     if not users:
         for admin_id in ADMIN_IDS:
@@ -952,16 +912,8 @@ async def broadcast_cancelled(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.answer("❌ Рассылка отменена.")
 
-# ==================== РАЗОВЫЙ ПЕРЕНОС ИСТОРИИ ЗА ЭТОТ МЕСЯЦ ====================
-
 @dp.message(Command("backfill_month"))
 async def backfill_month(message: types.Message, state: FSMContext):
-    """Разовая команда: после обновления бота колонка last_submitted у всех пустая,
-    даже если человек уже сдал трекшен в этом месяце раньше. Эта команда переносит
-    last_completed -> last_submitted для всех, чья дата попадает в текущий месяц.
-    Погрешность: если человек в этом месяце начал заполнять, но бросил на середине,
-    он тоже попадёт в список «прошедших» — после запуска стоит перепроверить список
-    через /admin -> «Кто прошёл в этом месяце» глазами."""
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Нет прав")
         return
@@ -983,12 +935,8 @@ async def backfill_month(message: types.Message, state: FSMContext):
         "напиши мне, поправим вручную."
     )
 
-# ==================== АДМИН-МЕНЮ: СТАТИСТИКА ТРЕКШЕНА ====================
-
 @dp.message(Command("cancel"))
 async def cmd_cancel(message: types.Message, state: FSMContext):
-    """Сбрасывает любое зависшее состояние (например, если бот застрял
-    в ожидании ника после недоведённого до конца удаления пользователя)."""
     current = await state.get_state()
     if current is None:
         await message.answer("Сейчас ничего не ожидаю, отменять нечего.")
@@ -1001,7 +949,7 @@ async def cmd_admin(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Эта команда только для администраторов")
         return
-    await state.clear()  # на случай, если предыдущий флоу (например, удаление ника) не был доведён до конца
+    await state.clear()
     await message.answer("🔧 Админ-меню:", reply_markup=get_admin_menu_keyboard())
 
 @dp.callback_query(lambda c: c.data == "admin_submitted_month")
@@ -1072,8 +1020,6 @@ async def admin_send_reminders(callback: types.CallbackQuery, state: FSMContext)
         report += "\n\n❌ Не получили:\n" + "\n".join(f"• {f}" for f in failed[:20])
     await callback.message.answer(report[:4000])
 
-# ==================== АДМИН-МЕНЮ: УБРАТЬ ИЗ РАССЫЛКИ ====================
-
 @dp.callback_query(lambda c: c.data == "admin_remove_user_start")
 async def admin_remove_user_start(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -1132,8 +1078,6 @@ async def admin_confirm_remove_no(callback: types.CallbackQuery, state: FSMConte
     await state.clear()
     await callback.message.answer("❌ Отменено, никого не убрали.")
 
-# ==================== ФОНОВЫЙ ПИНГ ====================
-
 async def keep_alive():
     while True:
         await asyncio.sleep(600)
@@ -1142,8 +1086,6 @@ async def keep_alive():
             print("✅ Пинг выполнен")
         except Exception as e:
             print(f"❌ Ошибка пинга: {e}")
-
-# ==================== ВЕБ-СЕРВЕР ====================
 
 app = Flask(__name__)
 
@@ -1161,8 +1103,6 @@ def keepalive():
 
 def run_web_server():
     app.run(host='0.0.0.0', port=8000)
-
-# ==================== ЗАПУСК ====================
 
 async def main():
     try:
@@ -1187,8 +1127,6 @@ async def main():
 
     print("Бот запущен!")
     await dp.start_polling(bot)
-
-# ==================== АДМИНСКИЕ КОМАНДЫ ====================
 
 @dp.message(Command("db"))
 async def show_db(message: types.Message, state: FSMContext):
@@ -1215,8 +1153,6 @@ async def show_db(message: types.Message, state: FSMContext):
 
 @dp.message(Command("fix_db_schema"))
 async def fix_db_schema(message: types.Message, state: FSMContext):
-    """Разовая команда: досоздаёт недостающие колонки (opted_out, last_submitted)
-    в текущей users.db, если она осталась от старой версии схемы."""
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Нет прав")
         return
@@ -1228,7 +1164,6 @@ async def fix_db_schema(message: types.Message, state: FSMContext):
 
 @dp.message(Command("send_now"))
 async def send_now(message: types.Message, state: FSMContext):
-    """Сразу показывает список и спрашивает подтверждение — как плановая рассылка"""
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Нет прав")
         return
@@ -1269,7 +1204,7 @@ async def restore_db(message: types.Message, state: FSMContext):
         file_data = await bot.download_file(file.file_path)
         with open('users.db', 'wb') as f:
             f.write(file_data.read())
-        init_db()  # переприменяем миграцию — вдруг восстановили старый бэкап без новых колонок
+        init_db()
         await message.answer("✅ База восстановлена!")
     except Exception as e:
         await message.answer(f"❌ Ошибка восстановления: {e}")
