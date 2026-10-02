@@ -905,7 +905,11 @@ async def ask_admin_broadcast_confirm():
 async def broadcast_confirmed(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.answer("🔄 Запускаю рассылку...")
-    await do_broadcast()
+    try:
+        await do_broadcast()
+    except Exception as e:
+        print(f"❌ Ошибка в рассылке: {e}")
+        await callback.message.answer(f"❌ Рассылка прервалась с ошибкой: {e}")
 
 @dp.callback_query(lambda c: c.data == "broadcast_no")
 async def broadcast_cancelled(callback: types.CallbackQuery, state: FSMContext):
